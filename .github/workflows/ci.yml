@@ -52,13 +52,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Start the full stack
+        env:
+          # mongo:8.0 refuses to start on the runners' Linux 6.19+ kernel (SERVER-121912).
+          MONGO_IMAGE: mongo:7.0
         run: |
           key=$(./scripts/new-key.sh)
           # CI uses the bundled mongo service, never the Atlas cluster from .env.example.
           sed -e "s|^ENCRYPTION_KEYS=.*|ENCRYPTION_KEYS=$key|" \
               -e "s|^COMPOSE_MONGODB_URI=.*|COMPOSE_MONGODB_URI=mongodb://mongo:27017/?replicaSet=rs0|" .env.example > .env
-          # Runner kernels are Linux 6.19+, where mongo:8.0 refuses to start (SERVER-121912).
-          echo "MONGO_IMAGE=mongo:7.0" >> .env
           docker compose up --build -d --wait
       - uses: actions/setup-node@v4
         with:

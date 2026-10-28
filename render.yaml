@@ -1,0 +1,51 @@
+# Render Blueprint: the API and the background worker in ONE free web service.
+# Pair it with the web app on Vercel and the database on MongoDB Atlas. Step by step: docs/go-live.md
+#
+# Render dashboard -> New -> Blueprint -> pick this repository. Render then asks for every
+# value marked `sync: false` below.
+#
+# The free plan sleeps after 15 minutes without visitors (the first request afterwards takes about
+# a minute). Switch `plan` to `starter` to keep it awake.
+services:
+  - type: web
+    name: ai-orchestrator-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./apps/api/Dockerfile
+    dockerContext: ./apps/api
+    # Runs the worker in the background and the API in the foreground (apps/api/start-all.sh).
+    dockerCommand: sh start-all.sh
+    healthCheckPath: /api/v1/health/live
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        value: "8000"
+      - key: ENVIRONMENT
+        value: production
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: MONGODB_DB
+        value: AI
+      - key: DEMO_MODE
+        value: "true"
+      - key: SEED_STARTER_AGENTS
+        value: "true"
+      - key: WORKER_CONCURRENCY
+        value: "2"
+      # mongodb+srv://USER:PASSWORD@cluster0.rxxertq.mongodb.net/AI  (Atlas -> Connect -> Drivers)
+      - key: MONGODB_URI
+        sync: false
+      # Output of ./scripts/new-key.sh or ./scripts/new-key.ps1. Back it up: stored API keys depend on it.
+      - key: ENCRYPTION_KEYS
+        sync: false
+      # The web app's address on Vercel, e.g. https://ai-orchestrator.vercel.app (used in invitation links)
+      - key: PUBLIC_URL
+        sync: false
+      # Same value as PUBLIC_URL
+      - key: CORS_ORIGINS
+        sync: false
+      # Optional free AI keys; leave empty to skip (they can also be pasted in the app under Models)
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false

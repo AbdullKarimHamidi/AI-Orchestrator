@@ -7,7 +7,7 @@ name: orchestrator
 
 services:
   mongo:
-    # MONGO_IMAGE lets hosts on Linux 6.19+ (which mongo:8.0 refuses, SERVER-121912) use mongo:7.0.
+    # MONGO_IMAGE=mongo:7.0 for hosts on Linux 6.19+, where mongo:8.0 refuses to start (SERVER-121912).
     image: ${MONGO_IMAGE:-mongo:8.0}
     restart: unless-stopped
     # Single-node replica set required for multi-document transactions

@@ -9,6 +9,7 @@ COPY requirements.txt .
 RUN pip install -r requirements.txt
 
 COPY app ./app
+COPY start-all.sh ./
 RUN useradd --system --uid 10001 orch && chown -R orch /app
 USER orch
 
