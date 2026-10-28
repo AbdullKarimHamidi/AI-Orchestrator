@@ -51,6 +51,9 @@ export const agentFormSchema = z.object({
   knowledge_base_ids: z.array(z.string()).max(20),
   knowledge_top_k: z.coerce.number<string>().int().min(1).max(20),
   max_tool_calls: z.coerce.number<string>().int().min(0).max(50),
+  memory_enabled: z.boolean(),
+  memory_top_k: z.coerce.number<string>().int().min(1).max(50),
+  memory_save: z.boolean(),
 })
 export type AgentFormValues = z.input<typeof agentFormSchema>
 
@@ -73,6 +76,9 @@ export function toFormValues(name: string, description: string, c?: AgentConfig)
     knowledge_base_ids: c?.knowledge_base_ids ?? [],
     knowledge_top_k: String(c?.knowledge_top_k ?? 5),
     max_tool_calls: String(c?.limits.max_tool_calls ?? 8),
+    memory_enabled: c?.memory?.enabled ?? false,
+    memory_top_k: String(c?.memory?.top_k ?? 10),
+    memory_save: c?.memory?.save_conversations ?? false,
   }
 }
 
@@ -93,6 +99,7 @@ export function toAgentInput(v: AgentFormValues, base?: AgentConfig): AgentInput
       input_schema: obj(v.input_schema),
       output_schema: obj(v.output_schema),
       limits: { timeout_seconds: Number(v.timeout_seconds), max_cost_usd_per_run: num(v.max_cost_usd_per_run), max_tool_calls: Number(v.max_tool_calls ?? 8) },
+      memory: { enabled: !!v.memory_enabled, top_k: Number(v.memory_top_k ?? 10), save_conversations: !!v.memory_save },
     },
   }
 }
@@ -346,6 +353,28 @@ export function AgentForm({ initial, baseConfig, providers, tools = [], knowledg
             <Label htmlFor="knowledge_top_k">Passages per answer</Label>
             <Input id="knowledge_top_k" inputMode="numeric" aria-invalid={!!errors.knowledge_top_k} {...register("knowledge_top_k")} />
             <FieldError id="knowledge_top_k-err" msg={errors.knowledge_top_k?.message} />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Memory</CardTitle>
+          <CardDescription>
+            Long-term memory from the <Link href="/memory" className="underline">Memory</Link> page. Runs receive the newest memories of scope &quot;global&quot; plus the scope passed as <code>input.memory_scope</code>.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" className="size-4" {...register("memory_enabled")} /> Add memories to the prompt
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" className="size-4" {...register("memory_save")} /> Save each completed conversation as a memory
+          </label>
+          <div className="max-w-48 space-y-1.5">
+            <Label htmlFor="memory_top_k">Memories per run</Label>
+            <Input id="memory_top_k" inputMode="numeric" aria-invalid={!!errors.memory_top_k} {...register("memory_top_k")} />
+            <FieldError id="memory_top_k-err" msg={errors.memory_top_k?.message} />
           </div>
         </CardContent>
       </Card>

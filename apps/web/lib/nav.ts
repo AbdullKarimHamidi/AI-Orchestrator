@@ -17,11 +17,11 @@ export const NAV_SECTIONS: { title: string; items: NavItem[] }[] = [
     title: "Build",
     items: [
       { href: "/agents", label: "Agents", icon: Bot, status: "available" },
-      { href: "/workflows", label: "Workflows", icon: GitBranch, status: "in_development" },
+      { href: "/workflows", label: "Workflows", icon: GitBranch, status: "available" },
       { href: "/tools", label: "Tools", icon: Wrench, status: "available" },
       { href: "/integrations", label: "Integrations", icon: Plug, status: "available" },
       { href: "/knowledge", label: "Knowledge", icon: Library, status: "available" },
-      { href: "/memory", label: "Memory", icon: BrainCircuit, status: "in_development" },
+      { href: "/memory", label: "Memory", icon: BrainCircuit, status: "available" },
     ],
   },
   {
@@ -29,15 +29,15 @@ export const NAV_SECTIONS: { title: string; items: NavItem[] }[] = [
     items: [
       { href: "/runs", label: "Runs", icon: Activity, status: "available" },
       { href: "/models", label: "Models", icon: Cpu, status: "available" },
-      { href: "/analytics", label: "Analytics", icon: BarChart3, status: "partial" },
-      { href: "/evaluations", label: "Evaluations", icon: FlaskConical, status: "in_development" },
+      { href: "/analytics", label: "Analytics", icon: BarChart3, status: "available" },
+      { href: "/evaluations", label: "Evaluations", icon: FlaskConical, status: "available" },
     ],
   },
   {
     title: "Govern",
     items: [
-      { href: "/security", label: "Security", icon: Shield, status: "partial" },
-      { href: "/settings", label: "Settings", icon: Settings, status: "partial" },
+      { href: "/security", label: "Security", icon: Shield, status: "available" },
+      { href: "/settings", label: "Settings", icon: Settings, status: "available" },
     ],
   },
 ]

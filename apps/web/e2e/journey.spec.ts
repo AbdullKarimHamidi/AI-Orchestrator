@@ -2,8 +2,7 @@ import { expect, test } from "@playwright/test"
 
 /**
  * The 10-step journey from the engineering brief, executed against the real stack in demo mode
- * (no paid provider needed). Steps 6–7 depend on the workflow engine, which is not implemented
- * yet; they are reported as skipped rather than faked.
+ * (no paid provider needed). Steps 6–7 build a workflow around the published agent and run it.
  */
 test("enterprise journey (demo mode)", async ({ page }) => {
   const email = `e2e-${Date.now()}@example.com`
@@ -67,14 +66,6 @@ test("enterprise journey (demo mode)", async ({ page }) => {
     await expect(page.getByLabel("Run events").getByText("run.completed")).toBeVisible()
   })
 
-  test.info().annotations.push({ type: "skip", description: "6. create a workflow: workflow engine not implemented yet (page shows 'In development')" })
-  test.info().annotations.push({ type: "skip", description: "7. validate and execute a workflow: not implemented yet" })
-  await test.step("6–7. workflows are honestly marked as in development", async () => {
-    await page.goto("/workflows")
-    await expect(page.getByText("In development")).toBeVisible()
-    await expect(page.locator("main").getByRole("button")).toHaveCount(0)
-  })
-
   await test.step("10a. user publishes v1", async () => {
     await page.goto(`/agents/${agentId}`)
     await page.getByRole("button", { name: "Publish v1" }).click()
@@ -92,6 +83,20 @@ test("enterprise journey (demo mode)", async ({ page }) => {
     expect(versions[0].config.system_prompt).not.toBe("A different draft prompt")
   })
 
+  await test.step("6–7. user builds a workflow around the published agent and runs it", async () => {
+    await page.goto("/workflows/new")
+    await page.getByLabel("Name", { exact: true }).fill(`${agentName} pipeline`)
+    await page.locator("#step-0-agent").selectOption(agentId)
+    await page.getByRole("button", { name: "Create workflow" }).click()
+    await expect(page).toHaveURL(/\/workflows\/wfl_/)
+    await page.getByRole("button", { name: "Publish" }).click()
+    await expect(page.getByText("Published a new version")).toBeVisible()
+    await page.getByLabel("Message").fill("workflow from playwright")
+    await page.getByRole("button", { name: "Run workflow" }).click()
+    await expect(page.getByLabel("Executed steps")).toBeVisible()
+    await expect(page.getByLabel("Executed steps").getByText("answer")).toBeVisible()
+  })
+
   await test.step("8. user runs published v1 and inspects events and results", async () => {
     await page.goto(`/agents/${agentId}/test`)
     await page.getByLabel(/Published v1/).check()
@@ -99,7 +104,7 @@ test("enterprise journey (demo mode)", async ({ page }) => {
     await page.getByRole("button", { name: "Run" }).click()
     await expect(page.getByText(/Echo: reproducible\?/)).toBeVisible()
     await page.goto("/runs")
-    await page.getByRole("link", { name: /^run_/ }).first().click()
+    await page.getByRole("row", { name: new RegExp(agentName) }).filter({ hasNotText: "workflow" }).getByRole("link", { name: /^run_/ }).first().click()
     await expect(page).toHaveURL(/\/runs\/run_/)
     runId = page.url().split("/runs/")[1]
     await expect(page.getByText("Executed configuration (snapshot)")).toBeVisible()

@@ -42,8 +42,10 @@ async def create_run(body: RunCreate, response: Response, ctx: Ctx = Depends(req
 @router.get("", response_model=Page[RunOut])
 async def list_runs(ctx: Ctx = Depends(require("runs:read")), db=Depends(db_dep),
                     status: str | None = Query(None, max_length=32), agent_id: str | None = Query(None, max_length=64),
+                    workflow_id: str | None = Query(None, max_length=64),
+                    kind: str | None = Query(None, pattern="^(agent|workflow)$"),
                     limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0)):
-    items, total = await RunService(db).list(ctx.workspace_id, status, agent_id, limit, offset)
+    items, total = await RunService(db).list(ctx.workspace_id, status, agent_id, limit, offset, workflow_id, kind)
     return {"items": [present_run(r) for r in items], "total": total, "limit": limit, "offset": offset}
 
 

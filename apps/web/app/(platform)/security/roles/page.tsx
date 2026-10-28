@@ -13,7 +13,7 @@ export default function RolesPage() {
   const perms = Array.from(new Set(roles.data.flatMap((r) => r.permissions))).sort()
   return (
     <div>
-      <PageHeader title="Roles" description="The built-in permission matrix, read live from the API. FastAPI enforces it on every protected endpoint; custom roles are in development." />
+      <PageHeader title="Roles" description="The built-in permission matrix, read live from the API. FastAPI enforces it on every protected endpoint." />
       <div className="overflow-x-auto rounded-xl border">
         <Table>
           <TableHeader>

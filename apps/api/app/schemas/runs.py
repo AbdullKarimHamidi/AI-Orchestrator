@@ -30,10 +30,14 @@ class RunError(OutModel):
 class RunOut(OutModel):
     id: str
     workspace_id: str
-    kind: Literal["agent"]
+    kind: Literal["agent", "workflow"]
     agent_id: str
     agent_name: str
     agent_version: int | None
+    workflow_id: str | None = None
+    workflow_name: str | None = None
+    workflow_version: int | None = None
+    eval_run_id: str | None = None
     source: Literal["published", "draft"]
     status: RunStatus
     demo: bool

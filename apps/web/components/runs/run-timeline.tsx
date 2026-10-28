@@ -15,6 +15,11 @@ const TONE: Record<string, string> = {
   "tool.result": "border-sky-400",
   "tool.limit_reached": "border-amber-500",
   "knowledge.retrieved": "border-violet-500",
+  "memory.loaded": "border-fuchsia-500",
+  "memory.saved": "border-fuchsia-400",
+  "workflow.step.started": "border-indigo-400",
+  "workflow.step.completed": "border-indigo-500",
+  "workflow.step.failed": "border-red-500",
 }
 
 function summary(e: RunEvent): string {
@@ -38,6 +43,18 @@ function summary(e: RunEvent): string {
       const sources = (d.sources ?? []) as { n: number; title: string }[]
       return d.count ? `${d.count} passage${d.count === 1 ? "" : "s"}: ${sources.map((s) => `[${s.n}] ${s.title}`).join(", ")}` : "no matching passages"
     }
+    case "memory.loaded":
+      return `${d.count} memor${d.count === 1 ? "y" : "ies"} from scopes ${((d.scopes ?? []) as string[]).join(", ")}`
+    case "memory.saved":
+      return `exchange saved to scope ${d.scope}`
+    case "workflow.step.started":
+      return `${d.step} (${d.type})${d.name ? ` · ${d.name}` : ""}`
+    case "workflow.step.completed":
+      return `${d.step}: ${d.result !== undefined ? `condition ${d.result} · ` : ""}${d.duration_ms} ms → ${d.next}${d.preview ? ` · ${String(d.preview).slice(0, 160)}` : ""}`
+    case "workflow.step.failed":
+      return `${d.step}: ${d.error}`
+    case "run.queued":
+      return d.steps !== undefined ? `workflow with ${d.steps} steps` : ""
     case "run.started":
       return `attempt ${d.attempt}`
     case "run.lease_expired":

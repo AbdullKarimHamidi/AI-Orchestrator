@@ -25,6 +25,12 @@ class AgentLimits(ApiModel):
     max_tool_calls: int = Field(default=8, ge=0, le=50, description="Tool calls allowed per run")
 
 
+class MemoryConfig(ApiModel):
+    enabled: bool = Field(default=False, description="Add stored memories for the run's scope to the prompt")
+    top_k: int = Field(default=10, ge=1, le=50, description="Most recent memories added per run")
+    save_conversations: bool = Field(default=False, description="Store each completed exchange as a memory")
+
+
 class AgentConfig(ApiModel):
     system_prompt: str = Field(default="", max_length=50_000)
     model: ModelRef | None = None
@@ -37,6 +43,7 @@ class AgentConfig(ApiModel):
     input_schema: dict[str, Any] | None = None
     output_schema: dict[str, Any] | None = None
     limits: AgentLimits = Field(default_factory=AgentLimits)
+    memory: MemoryConfig = Field(default_factory=MemoryConfig)
 
     @field_validator("input_schema", "output_schema")
     @classmethod
