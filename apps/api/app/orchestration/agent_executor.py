@@ -24,10 +24,12 @@ from app.providers.base import ChatMessage, ChatRequest, ChatResult, ProviderErr
 from app.providers.pricing import estimate_cost
 from app.providers.registry import build_adapter
 from app.repositories.audit import UsageRepository
+from app.repositories.memory import MemoryRepository
 from app.repositories.providers import ProviderRepository
 from app.repositories.runs import RunEventRepository
 from app.repositories.tools import ToolRepository
 from app.services.knowledge import KnowledgeService
+from app.services.memory import MEMORY_INSTRUCTIONS, MemoryService, scopes_for
 from app.services.providers import runtime_config
 from app.services.runs import BudgetService
 from app.services.tools import execute_tool
@@ -92,6 +94,31 @@ class AgentExecutor:
         citations = [{"n": i + 1, "kb_id": h["kb_id"], "doc_id": h["doc_id"], "title": h["title"],
                       "chunk": h["chunk"], "score": h["score"], "excerpt": h["text"][:300]} for i, h in enumerate(hits)]
         return system, citations
+
+    async def _remember(self, run: dict, cfg: dict, system: str) -> str:
+        """Adds the newest memories of the run's scopes (global + input.memory_scope) to the prompt."""
+        mem = cfg.get("memory") or {}
+        if not mem.get("enabled"):
+            return system
+        ws, run_id = run["workspace_id"], run["_id"]
+        scopes = scopes_for(run["input"])
+        items = await MemoryRepository(self.db).recent(ws, run["agent_id"], scopes, int(mem.get("top_k") or 10))
+        await self.events.append(run_id, ws, "memory.loaded", {"count": len(items), "scopes": scopes})
+        if not items:
+            return system
+        lines = "\n".join(f"- {m['content']}" for m in items)
+        return f"{system}\n\n{MEMORY_INSTRUCTIONS}\n<memory>\n{lines}\n</memory>".strip()
+
+    async def _save_exchange(self, run: dict, cfg: dict, answer: str) -> None:
+        mem = cfg.get("memory") or {}
+        if not (mem.get("enabled") and mem.get("save_conversations")):
+            return
+        ws, run_id = run["workspace_id"], run["_id"]
+        scope = scopes_for(run["input"])[-1]
+        content = f"User: {run['input']['message'][:1500]}\nAssistant: {answer[:2000]}"
+        doc = await MemoryService(self.db).create(ws, run.get("created_by", "system"), run["agent_id"], scope,
+                                                  content, ["conversation"], None, source="run", run_id=run_id)
+        await self.events.append(run_id, ws, "memory.saved", {"memory_id": doc["_id"], "scope": scope})
 
     async def _call(self, run: dict, p: dict, model: str, label: str, req: ChatRequest,
                     totals: dict, per_run_cap: float | None, will_fallback: bool = False) -> ChatResult:
@@ -171,6 +198,7 @@ class AgentExecutor:
         totals = {"input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0}
 
         system, citations = await self._retrieve(run, cfg)
+        system = await self._remember(run, cfg, system)
         tool_docs = [t for t in await self.tools.many(ws, list(cfg.get("tool_ids") or [])) if t.get("enabled", True)]
         by_name = {t["name"]: t for t in tool_docs}
         specs = [ToolSpec(t["name"], t["description"], t["input_schema"]) for t in tool_docs] if max_tool_calls else []
@@ -235,4 +263,5 @@ class AgentExecutor:
             except (ValueError, jsonschema.ValidationError) as exc:
                 msg = exc.message if isinstance(exc, jsonschema.ValidationError) else str(exc)
                 raise RunFailure("OUTPUT_SCHEMA_MISMATCH", f"model output failed schema validation: {msg}") from exc
+        await self._save_exchange(run, cfg, result.text)
         return ExecutionResult(output=output, usage=totals, demo=p["kind"] == "demo")

@@ -3,12 +3,14 @@ from pymongo.asynchronous.database import AsyncDatabase
 from app.core.exceptions import Conflict, Forbidden, NotFound
 from app.repositories.audit import AuditRepository
 from app.repositories.identity import UserRepository, WorkspaceRepository
+from app.services.billing import BillingService
 from app.services.rbac import ROLE_RANK
 
 
 class WorkspaceService:
     def __init__(self, db: AsyncDatabase):
         self.ws = WorkspaceRepository(db)
+        self.billing = BillingService(db)
         self.users = UserRepository(db)
         self.audit = AuditRepository(db)
 
@@ -30,6 +32,7 @@ class WorkspaceService:
                            code="USER_NOT_REGISTERED")
         if await self.ws.membership(ws_id, user["_id"]):
             raise Conflict("User is already a member")
+        await self.billing.check_seat(ws_id)
         await self.ws.add_member(ws_id, user["_id"], role)
         await self.audit.record(ws_id, actor["_id"], "member.add", "user", user["_id"], {"role": role})
 

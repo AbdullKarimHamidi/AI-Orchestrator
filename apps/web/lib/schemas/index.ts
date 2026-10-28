@@ -34,6 +34,7 @@ export const agentConfigSchema = z.object({
   input_schema: z.record(z.string(), z.unknown()).nullable(),
   output_schema: z.record(z.string(), z.unknown()).nullable(),
   limits: z.object({ timeout_seconds: z.number(), max_cost_usd_per_run: z.number().nullable(), max_tool_calls: z.number().default(8) }),
+  memory: z.object({ enabled: z.boolean(), top_k: z.number(), save_conversations: z.boolean() }).default({ enabled: false, top_k: 10, save_conversations: false }),
 })
 export type AgentConfig = z.infer<typeof agentConfigSchema>
 
@@ -128,10 +129,14 @@ export const TERMINAL_STATUSES: RunStatus[] = ["completed", "failed", "cancelled
 export const runSchema = z.object({
   id: z.string(),
   workspace_id: z.string(),
-  kind: z.literal("agent"),
+  kind: z.enum(["agent", "workflow"]),
   agent_id: z.string(),
   agent_name: z.string(),
   agent_version: z.number().nullable(),
+  workflow_id: z.string().nullable().optional(),
+  workflow_name: z.string().nullable().optional(),
+  workflow_version: z.number().nullable().optional(),
+  eval_run_id: z.string().nullable().optional(),
   source: z.enum(["published", "draft"]),
   status: runStatusSchema,
   demo: z.boolean(),
@@ -297,3 +302,199 @@ export type KnowledgeDocument = z.infer<typeof documentSchema>
 
 export const searchHitSchema = z.object({ kb_id: z.string(), doc_id: z.string(), title: z.string(), chunk: z.number(), text: z.string(), score: z.number() })
 export type SearchHit = z.infer<typeof searchHitSchema>
+
+// ----- workflows -----
+export const stepTypeSchema = z.enum(["agent", "tool", "knowledge", "transform", "condition"])
+export type StepType = z.infer<typeof stepTypeSchema>
+export const conditionOpSchema = z.enum(["equals", "not_equals", "contains", "not_contains", "regex", "is_empty", "not_empty", "greater_than", "less_than"])
+export type ConditionOp = z.infer<typeof conditionOpSchema>
+
+export const workflowStepSchema = z.object({
+  id: z.string(),
+  type: stepTypeSchema,
+  name: z.string(),
+  agent_id: z.string().nullable(),
+  message: z.string(),
+  tool_id: z.string().nullable(),
+  arguments: z.record(z.string(), z.unknown()),
+  knowledge_base_ids: z.array(z.string()),
+  query: z.string(),
+  top_k: z.number(),
+  template: z.string(),
+  condition: z.object({ left: z.string(), op: conditionOpSchema, right: z.string(), case_sensitive: z.boolean() }).nullable(),
+  on_true: z.string().nullable(),
+  on_false: z.string().nullable(),
+  next: z.string().nullable(),
+})
+export type WorkflowStep = z.infer<typeof workflowStepSchema>
+
+export const workflowDefinitionSchema = z.object({ steps: z.array(workflowStepSchema), max_step_executions: z.number() })
+export type WorkflowDefinition = z.infer<typeof workflowDefinitionSchema>
+
+export const workflowSchema = z.object({
+  id: z.string(),
+  workspace_id: z.string(),
+  name: z.string(),
+  description: z.string(),
+  status: z.enum(["draft", "published", "archived"]),
+  draft: workflowDefinitionSchema,
+  revision: z.number(),
+  published_version: z.number().nullable(),
+  latest_version: z.number().nullable(),
+  draft_dirty: z.boolean(),
+  created_by: z.string(),
+  created_at: z.string(),
+  updated_at: z.string(),
+})
+export type Workflow = z.infer<typeof workflowSchema>
+
+export const workflowVersionSchema = z.object({
+  id: z.string(),
+  workflow_id: z.string(),
+  version: z.number(),
+  definition: workflowDefinitionSchema,
+  note: z.string(),
+  created_by: z.string(),
+  created_at: z.string(),
+})
+export type WorkflowVersion = z.infer<typeof workflowVersionSchema>
+
+export const validationSchema = z.object({ valid: z.boolean(), problems: z.array(z.string()) })
+
+// ----- evaluations -----
+export const evalCaseSchema = z.object({ id: z.string(), input: z.string(), expected: z.string(), variables: z.record(z.string(), z.unknown()) })
+export type EvalCase = z.infer<typeof evalCaseSchema>
+
+export const datasetSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string(),
+  cases: z.array(evalCaseSchema),
+  case_count: z.number(),
+  created_by: z.string(),
+  created_at: z.string(),
+  updated_at: z.string(),
+})
+export type Dataset = z.infer<typeof datasetSchema>
+
+export const scorerTypeSchema = z.enum(["exact", "contains", "not_contains", "regex", "json_valid", "not_empty"])
+export type ScorerType = z.infer<typeof scorerTypeSchema>
+
+export const evalResultSchema = z.object({
+  case_id: z.string(),
+  input: z.string(),
+  expected: z.string(),
+  run_id: z.string(),
+  status: z.string(),
+  output: z.string().nullable(),
+  passed: z.boolean().nullable(),
+  reason: z.string(),
+  latency_ms: z.number().nullable(),
+  cost_usd: z.number(),
+})
+export type EvalResult = z.infer<typeof evalResultSchema>
+
+export const evalRunSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  dataset_id: z.string(),
+  dataset_name: z.string(),
+  agent_id: z.string(),
+  agent_name: z.string(),
+  agent_version: z.number().nullable(),
+  source: z.enum(["published", "draft"]),
+  scorer: z.object({ type: scorerTypeSchema, case_sensitive: z.boolean() }),
+  status: z.enum(["running", "completed"]),
+  summary: z.object({
+    total: z.number(), finished: z.number(), passed: z.number(), failed: z.number(), errors: z.number(),
+    pass_rate: z.number().nullable(), avg_latency_ms: z.number().nullable(), cost_usd: z.number(),
+  }),
+  results: z.array(evalResultSchema),
+  created_by: z.string(),
+  created_at: z.string(),
+  finished_at: z.string().nullable(),
+})
+export type EvalRun = z.infer<typeof evalRunSchema>
+
+export const compareSchema = z.object({
+  a: evalRunSchema,
+  b: evalRunSchema,
+  rows: z.array(z.object({
+    case_id: z.string(), input: z.string(), expected: z.string(), a: evalResultSchema.nullable(), b: evalResultSchema.nullable(),
+    change: z.enum(["fixed", "regressed", "same_pass", "same_fail", "missing"]),
+  })),
+  fixed: z.number(),
+  regressed: z.number(),
+})
+export type Compare = z.infer<typeof compareSchema>
+
+// ----- memory -----
+export const memorySchema = z.object({
+  id: z.string(),
+  agent_id: z.string(),
+  scope: z.string(),
+  content: z.string(),
+  tags: z.array(z.string()),
+  source: z.enum(["manual", "run"]),
+  run_id: z.string().nullable(),
+  created_by: z.string(),
+  created_at: z.string(),
+  expires_at: z.string().nullable(),
+})
+export type Memory = z.infer<typeof memorySchema>
+export const memoryScopeSchema = z.object({ agent_id: z.string(), scope: z.string(), count: z.number(), last_at: z.string() })
+
+// ----- billing and analytics -----
+export const planSchema = z.object({
+  id: z.enum(["self_hosted", "starter", "team", "business"]),
+  name: z.string(),
+  price_usd: z.number(),
+  seats: z.number().nullable(),
+  runs_per_month: z.number().nullable(),
+  description: z.string(),
+})
+export type Plan = z.infer<typeof planSchema>
+
+export const billingSchema = z.object({
+  plan: planSchema,
+  plans: z.array(planSchema),
+  period_start: z.string(),
+  period_end: z.string(),
+  runs_used: z.number(),
+  seats_used: z.number(),
+  model_cost_usd: z.number(),
+  monthly_budget_usd: z.number().nullable(),
+  plan_changed_at: z.string().nullable(),
+})
+
+export const statementSchema = z.object({
+  period: z.string(),
+  period_start: z.string(),
+  period_end: z.string(),
+  current: z.boolean(),
+  runs: z.number(),
+  model_calls: z.number(),
+  input_tokens: z.number(),
+  output_tokens: z.number(),
+  model_cost_usd: z.number(),
+  plan_fee_usd: z.number(),
+  total_usd: z.number(),
+})
+export type Statement = z.infer<typeof statementSchema>
+
+export const timeseriesRowSchema = z.object({ date: z.string(), runs: z.number(), completed: z.number(), failed: z.number(), other: z.number(), tokens: z.number(), cost_usd: z.number() })
+export type TimeseriesRow = z.infer<typeof timeseriesRowSchema>
+
+export const breakdownRowSchema = z.object({
+  kind: z.enum(["agent", "workflow"]),
+  id: z.string(),
+  name: z.string(),
+  runs: z.number(),
+  completed: z.number(),
+  failed: z.number(),
+  success_rate: z.number().nullable(),
+  avg_latency_ms: z.number().nullable(),
+  tokens: z.number(),
+  cost_usd: z.number(),
+})
+export type BreakdownRow = z.infer<typeof breakdownRowSchema>

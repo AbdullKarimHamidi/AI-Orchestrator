@@ -126,8 +126,22 @@ against the tool's JSON Schema, executed with a timeout and response-size cap, a
 `tool.call`/`tool.result` events (arguments redacted). Outbound tool and MCP requests resolve the host
 first and refuse private, loopback and link-local addresses unless `TOOLS_ALLOW_PRIVATE_NETWORKS=true`.
 
-Not yet created (their modules are in development): `workflows`, `workflow_versions`,
-`evaluation_datasets`, `evaluation_runs`. Their designed shapes are in the blueprint.
+Workflows: `workflows` (draft definition + `revision`, soft delete) and append-only `workflow_versions`
+mirror agents. A workflow run is an ordinary `runs` document with `kind="workflow"`, so the worker's
+leases, heartbeat, cancellation, timeouts and SSE apply unchanged; `WorkflowExecutor` walks the steps,
+runs agent steps through `AgentExecutor` with the workflow run as parent (usage and events land on it),
+and bounds loops with `max_step_executions`. Templates are dotted-path lookups only (no expressions).
+
+Evaluations: `eval_datasets` hold up to 500 cases; an `eval_runs` document queues one agent run per case
+(tagged `eval_run_id`) and is scored on read until every case run is terminal, then frozen.
+
+Memory: `memories` (`agent_id`, `scope`, `content`, optional `expires_at` with a TTL index). When an
+agent's `config.memory.enabled` is set, the newest `top_k` memories of scopes `global` + `input.memory_scope`
+are added to the system prompt (`memory.loaded` event); `save_conversations` stores each exchange.
+
+Billing: the plan lives in `workspaces.settings.plan` (default `self_hosted`, unlimited). Run quotas are
+checked when any run is queued and seat limits when members or invitations are added. Statements are
+aggregated from `usage_records` and `runs` per UTC month.
 
 Transactions are used only where atomicity across collections matters: registration (user + workspace +
 owner membership). Publishing uses the agent `revision` for optimistic concurrency plus the unique
@@ -140,8 +154,8 @@ TanStack Query through one typed client (`lib/api-client.ts`), which validates e
 and attaches workspace and CSRF headers; components never call `fetch` directly. Forms use
 React Hook Form + Zod. UI primitives: shadcn/ui (Base UI flavor). Zustand is not used: server state lives
 in TanStack Query, and the only client state (current workspace) is a small context. Navigation entries
-carry an honest status (`available`, `partial`, `in_development`); unfinished routes render an
-"In development" page with no controls.
+carry a status (`available`, `partial`, `in_development`); every module is now `available`. The
+`InDevelopment` component remains for future modules that are routed before they are built.
 
 ## Dependency versions
 

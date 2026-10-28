@@ -30,6 +30,8 @@ def present_run(r: dict) -> dict:
     return {"id": r["_id"], "workspace_id": r["workspace_id"], "kind": r.get("kind", "agent"),
             "agent_id": r["agent_id"], "agent_name": r.get("agent_name", ""),
             "agent_version": r.get("agent_version"), "source": r.get("source", "published"),
+            "workflow_id": r.get("workflow_id"), "workflow_name": r.get("workflow_name"),
+            "workflow_version": r.get("workflow_version"), "eval_run_id": r.get("eval_run_id"),
             "status": r["status"], "demo": r.get("demo", False), "input": r.get("input", {}),
             "output": r.get("output"), "error": r.get("error"),
             "usage": r.get("usage") or {"input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0},
@@ -63,7 +65,7 @@ class RunService:
         self.budget = BudgetService(db)
 
     async def create(self, ws_id: str, user_id: str, role: str, req: RunCreate,
-                     idempotency_key: str | None) -> tuple[dict, bool]:
+                     idempotency_key: str | None, extra: dict | None = None) -> tuple[dict, bool]:
         agent = await self.agents.get(ws_id, req.agent_id)
         if not agent:
             raise NotFound("Agent not found")
@@ -98,9 +100,7 @@ class RunService:
         primary = await self.providers.get(ws_id, config["model"]["provider_id"])
         if not primary:
             raise Unprocessable("The agent's primary provider no longer exists", code="PROVIDER_NOT_FOUND")
-        remaining = await self.budget.remaining(ws_id)
-        if remaining is not None and remaining <= 0:
-            raise Conflict("Workspace monthly budget is exhausted", code="BUDGET_EXCEEDED")
+        await self.check_spend(ws_id)
 
         s = get_settings()
         timeout = min(req.timeout_seconds or config.get("limits", {}).get("timeout_seconds")
@@ -112,7 +112,7 @@ class RunService:
                "error": None, "usage": {"input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0},
                "attempt": 0, "max_attempts": MAX_ATTEMPTS, "cancel_requested": False, "timeout_seconds": timeout,
                "deadline_at": None, "available_at": t, "lease_owner": None, "lease_expires_at": None,
-               "event_seq": 0, "created_by": user_id, "created_at": t, "updated_at": t}
+               "event_seq": 0, "created_by": user_id, "created_at": t, "updated_at": t, **(extra or {})}
         if idempotency_key:
             doc["idempotency_key"] = idempotency_key
             run, created = await self.runs.insert_idempotent(doc)
@@ -123,6 +123,15 @@ class RunService:
                                      {"agent_version": version, "source": req.source})
             await self.audit.record(ws_id, user_id, "run.create", "run", run["_id"], {"agent_id": agent["_id"]})
         return run, created
+
+    async def check_spend(self, ws_id: str) -> None:
+        """Budget and plan quota, checked before any run (agent or workflow) is queued."""
+        from app.services.billing import BillingService
+
+        remaining = await self.budget.remaining(ws_id)
+        if remaining is not None and remaining <= 0:
+            raise Conflict("Workspace monthly budget is exhausted", code="BUDGET_EXCEEDED")
+        await BillingService(self.runs.db).check_run_quota(ws_id)
 
     async def get(self, ws_id: str, run_id: str) -> dict:
         r = await self.runs.get(ws_id, run_id)
@@ -144,12 +153,18 @@ class RunService:
         await self.audit.record(ws_id, user_id, "run.cancel", "run", run_id)
         return updated
 
-    async def list(self, ws_id: str, status: str | None, agent_id: str | None, limit: int, offset: int):
+    async def list(self, ws_id: str, status: str | None, agent_id: str | None, limit: int, offset: int,
+                   workflow_id: str | None = None, kind: str | None = None):
         f: dict = {}
         if status:
             f["status"] = status
         if agent_id:
             f["agent_id"] = agent_id
+        if workflow_id:
+            f["workflow_id"] = workflow_id
+        if kind:
+            # Runs created before workflows existed have no kind field: they are agent runs.
+            f["kind"] = {"$ne": "workflow"} if kind == "agent" else kind
         return await self.runs.list(ws_id, f, limit=limit, offset=offset)
 
 

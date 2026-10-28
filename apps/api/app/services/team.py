@@ -21,6 +21,7 @@ from app.repositories.audit import AuditRepository
 from app.repositories.base import now
 from app.repositories.identity import UserRepository, WorkspaceRepository
 from app.repositories.team import ApiKeyRepository, InvitationRepository
+from app.services.billing import BillingService
 from app.services.rbac import ROLE_RANK
 
 API_KEY_PREFIX = "orch_"
@@ -40,6 +41,7 @@ def present_api_key(k: dict) -> dict:
 class InvitationService:
     def __init__(self, db: AsyncDatabase):
         self.inv = InvitationRepository(db)
+        self.billing = BillingService(db)
         self.ws = WorkspaceRepository(db)
         self.users = UserRepository(db)
         self.audit = AuditRepository(db)
@@ -54,6 +56,7 @@ class InvitationService:
         for p in await self.inv.pending(ws_id):
             if p["email"] == email:
                 await self.inv.mark(ws_id, p["_id"], "superseded", actor_id)
+        await self.billing.check_seat(ws_id)
         token = secrets.token_urlsafe(32)
         t = now()
         doc = {"_id": new_id("inv"), "workspace_id": ws_id, "email": email, "role": role,

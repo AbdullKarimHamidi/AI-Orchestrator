@@ -68,6 +68,9 @@ def index_plan() -> dict[str, list[IndexModel]]:
                  IndexModel([("workspace_id", ASCENDING), ("status", ASCENDING), ("created_at", DESCENDING)]),
                  IndexModel([("status", ASCENDING), ("available_at", ASCENDING)]),  # worker claim
                  IndexModel([("status", ASCENDING), ("lease_expires_at", ASCENDING)]),  # lease recovery
+                 IndexModel([("workspace_id", ASCENDING), ("workflow_id", ASCENDING), ("created_at", DESCENDING)],
+                            partialFilterExpression={"workflow_id": {"$type": "string"}}),
+                 IndexModel([("eval_run_id", ASCENDING)], partialFilterExpression={"eval_run_id": {"$type": "string"}}),
                  IndexModel([("workspace_id", ASCENDING), ("idempotency_key", ASCENDING)], unique=True,
                             partialFilterExpression={"idempotency_key": {"$type": "string"}})],
         "run_events": [IndexModel([("run_id", ASCENDING), ("seq", ASCENDING)], unique=True),
@@ -89,6 +92,17 @@ def index_plan() -> dict[str, list[IndexModel]]:
                       IndexModel([("status", ASCENDING), ("lease_expires_at", ASCENDING)])],
         "chunks": [IndexModel([("workspace_id", ASCENDING), ("kb_id", ASCENDING)]),
                    IndexModel([("workspace_id", ASCENDING), ("doc_id", ASCENDING)])],
+        "workflows": [IndexModel([("workspace_id", ASCENDING), ("updated_at", DESCENDING)]),
+                      IndexModel([("workspace_id", ASCENDING), ("name_lower", ASCENDING)], unique=True,
+                                 partialFilterExpression={"deleted": False})],
+        "workflow_versions": [IndexModel([("workflow_id", ASCENDING), ("version", DESCENDING)], unique=True),
+                              IndexModel([("workspace_id", ASCENDING)])],
+        "eval_datasets": [IndexModel([("workspace_id", ASCENDING), ("name_lower", ASCENDING)], unique=True,
+                                     partialFilterExpression={"deleted": False})],
+        "eval_runs": [IndexModel([("workspace_id", ASCENDING), ("created_at", DESCENDING)])],
+        "memories": [IndexModel([("workspace_id", ASCENDING), ("agent_id", ASCENDING), ("scope", ASCENDING),
+                                 ("created_at", DESCENDING)]),
+                     IndexModel([("expires_at", ASCENDING)], expireAfterSeconds=0)],
         "api_keys": [IndexModel([("key_hash", ASCENDING)], unique=True),
                      IndexModel([("workspace_id", ASCENDING), ("revoked", ASCENDING)])],
     }

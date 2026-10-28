@@ -25,6 +25,7 @@ from app.core.security import get_cipher
 from app.db.client import close_client, get_db
 from app.db.indexes import ensure_schema
 from app.orchestration.agent_executor import AgentExecutor, RunFailure
+from app.orchestration.workflow_executor import WorkflowExecutor
 from app.repositories.base import now
 from app.repositories.knowledge import DocumentRepository
 from app.repositories.runs import RunEventRepository, RunRepository
@@ -52,6 +53,7 @@ class Worker:
         self.runs = RunRepository(self.db)
         self.events = RunEventRepository(self.db)
         self.executor = AgentExecutor(self.db)
+        self.workflow_executor = WorkflowExecutor(self.db)
         self.heartbeat_interval = heartbeat_interval
         self.inflight: dict[str, asyncio.Task] = {}
         self.stopping = asyncio.Event()
@@ -63,7 +65,8 @@ class Worker:
         deadline = now() + timedelta(seconds=run["timeout_seconds"])
         await self.db["runs"].update_one({"_id": rid, "lease_owner": self.id}, {"$set": {"deadline_at": deadline}})
         await self.events.append(rid, ws, "run.started", {"attempt": run["attempt"], "worker": self.id})
-        task = asyncio.create_task(self.executor.execute(run))
+        executor = self.workflow_executor if run.get("kind") == "workflow" else self.executor
+        task = asyncio.create_task(executor.execute(run))
         final: dict | None = None
         try:
             while True:

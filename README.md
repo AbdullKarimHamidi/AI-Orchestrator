@@ -22,7 +22,11 @@ User guide (PDF): [`docs/user-guide.pdf`](docs/user-guide.pdf) · Architecture: 
 | Production: HTTPS via Caddy, health checks, backups/restore, CI (lint, tests, build, browser E2E) | Implemented |
 | Tools: HTTP API tools and tools imported from remote MCP servers (Streamable HTTP), encrypted credentials, schema-validated calls, SSRF guard, test console, per-agent allowlist, tool calling on OpenAI, Anthropic and Gemini | Implemented |
 | Knowledge (RAG): knowledge bases, upload PDF/DOCX/Markdown/HTML/CSV/JSON/text or paste text, background ingestion in the worker, OpenAI/Gemini/compatible embeddings or a built-in lexical index, search test, retrieved passages cited in run output | Implemented (in-process vector search; fine up to ~100k chunks per knowledge base) |
-| Workflows, memory, evaluations, billing | **In development**: pages say so; there are no fake controls |
+| Workflows: step editor (agent, tool, knowledge search, transform, condition with true/false routes), strict `{{ templates }}`, loop guard, draft → publish immutable versions, archive, runs in the worker with per-step events, `POST /workflows/{id}/runs` | Implemented (linear steps with routing; no parallel branches or human approval yet) |
+| Evaluations: datasets of cases (editor + bulk import), evaluation runs of a published or draft agent, scorers (contains, exact, regex, JSON valid, not empty), live pass rate, case-by-case comparison of two runs | Implemented |
+| Memory: per-agent memories in a global or per-end-user scope, optional TTL, injection into the prompt, automatic saving of conversations, "forget this scope" deletion requests | Implemented |
+| Billing: plans with seat and monthly run quotas enforced by the API, monthly usage statements (plan fee + model spend) with CSV export | Implemented (internal chargeback; no payment processor) |
+| Analytics: runs per day by outcome, per agent / workflow breakdown, per provider / model usage and cost | Implemented |
 
 ## Quick start
 
@@ -42,6 +46,10 @@ Prerequisite: Docker (Docker Desktop on Windows/macOS).
 
 Open <http://localhost:3000>, register, then **Agents → New agent → provider "Demo" → Test console**.
 API docs (Swagger) are at <http://localhost:8000/api/docs>.
+
+Database: the project uses MongoDB Atlas. Set `MONGODB_URI` (and `MONGODB_DB=AI`) in `.env`; with Docker, set
+`COMPOSE_MONGODB_URI` to the same value so the containers use Atlas instead of the bundled `mongo` service.
+Atlas must allow connections from your IP (Network Access in the Atlas console).
 
 Manual equivalent: `cp .env.example .env`, put the output of `./scripts/new-key.sh` into `ENCRYPTION_KEYS`,
 then `docker compose up --build -d`.
