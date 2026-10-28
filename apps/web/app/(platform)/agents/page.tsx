@@ -1,15 +1,17 @@
 "use client"
 
-import { Plus } from "lucide-react"
+import { Plus, Sparkles } from "lucide-react"
 import Link from "next/link"
 import { useState } from "react"
+import { toast } from "sonner"
 
 import { EmptyState, ErrorState, LoadingRows, PageHeader } from "@/components/common/states"
 import { StatusBadge } from "@/components/common/status-badge"
-import { buttonVariants } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { useAgents } from "@/hooks/use-api"
+import { useAgentMutations, useAgents } from "@/hooks/use-api"
+import { errorMessage } from "@/lib/api-client"
 import { fmtRelative } from "@/lib/format"
 import { can, useWorkspaceCtx } from "@/lib/workspace-context"
 
@@ -19,16 +21,39 @@ export default function AgentsPage() {
   const [status, setStatus] = useState("")
   const agents = useAgents(workspaceId, { q: q || undefined, status: status || undefined })
   const canWrite = can(role, "agents:write")
+  const canPublish = can(role, "agents:publish")
+  const m = useAgentMutations(workspaceId)
+
+  async function installStarters() {
+    try {
+      const r = await m.starterPack.mutateAsync()
+      const parts = [r.created.length && `${r.created.length} added`, r.updated.length && `${r.updated.length} moved to your best free provider`]
+      toast.success(parts.filter(Boolean).join(", ") || "Starter agents are already up to date")
+    } catch (e) {
+      toast.error(errorMessage(e))
+    }
+  }
+  const starterButton = canPublish && (
+    <Button variant="outline" disabled={m.starterPack.isPending} onClick={installStarters}
+      title="Ready-made agents on the best free provider you have connected (Models page)">
+      <Sparkles className="size-4" /> Install starter agents
+    </Button>
+  )
 
   return (
     <div>
       <PageHeader
         title="Agents"
         description="Versioned agent definitions. Production runs always execute an immutable published version."
-        actions={canWrite && (
-          <Link href="/agents/new" className={buttonVariants()}>
-            <Plus className="size-4" /> New agent
-          </Link>
+        actions={(
+          <div className="flex flex-wrap gap-2">
+            {starterButton}
+            {canWrite && (
+              <Link href="/agents/new" className={buttonVariants()}>
+                <Plus className="size-4" /> New agent
+              </Link>
+            )}
+          </div>
         )}
       />
       <div className="mb-4 flex flex-wrap gap-2">
@@ -48,7 +73,12 @@ export default function AgentsPage() {
         <EmptyState
           title={q || status ? "No agents match these filters" : "No agents yet"}
           description={q || status ? "Try a different search." : "Create an agent, choose a model, and publish a version to start running it."}
-          action={canWrite && !q && !status && <Link href="/agents/new" className={buttonVariants()}>Create your first agent</Link>}
+          action={canWrite && !q && !status && (
+            <div className="flex flex-wrap justify-center gap-2">
+              {starterButton}
+              <Link href="/agents/new" className={buttonVariants()}>Create your first agent</Link>
+            </div>
+          )}
         />
       ) : (
         <div className="rounded-xl border">

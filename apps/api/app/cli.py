@@ -3,6 +3,7 @@
     python -m app.cli create-user EMAIL NAME --workspace "Acme"     # prompts for a password
     python -m app.cli reset-password EMAIL                          # prompts; signs the user out everywhere
     python -m app.cli list-users
+    python -m app.cli setup-free                                    # free providers + starter agents everywhere
 
 In Docker:  docker compose exec api python -m app.cli reset-password someone@example.com
 """
@@ -58,6 +59,17 @@ async def list_users() -> None:
         print(f"{u['_id']}\t{u['email']}\t{u['name']}\t{u['created_at']:%Y-%m-%d}")
 
 
+async def setup_free() -> None:
+    """Adds the free providers configured in .env and the starter agents to every workspace."""
+    from app.services.starter_agents import StarterAgentService
+
+    db = get_db()
+    async for ws in db["workspaces"].find({}, {"name": 1, "owner_id": 1}):
+        r = await StarterAgentService(db).install(ws["_id"], ws["owner_id"])
+        print(f"{ws['name']}: created {len(r['created'])}, updated {len(r['updated'])}, "
+              f"skipped {len(r['skipped'])}")
+
+
 async def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(prog="python -m app.cli")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -70,6 +82,7 @@ async def main(argv: list[str] | None = None) -> None:
     r.add_argument("email")
     r.add_argument("--password", help="non-interactive (avoid: ends up in shell history)")
     sub.add_parser("list-users")
+    sub.add_parser("setup-free", help="add free providers from .env and starter agents to every workspace")
     a = p.parse_args(argv)
     await ensure_schema(get_db())
     try:
@@ -77,6 +90,8 @@ async def main(argv: list[str] | None = None) -> None:
             await create_user(a.email, a.name, a.workspace, a.password)
         elif a.cmd == "reset-password":
             await reset_password(a.email, a.password)
+        elif a.cmd == "setup-free":
+            await setup_free()
         else:
             await list_users()
     finally:

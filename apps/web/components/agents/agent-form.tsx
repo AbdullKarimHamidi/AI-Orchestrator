@@ -125,6 +125,7 @@ function ModelPicker({ prefix, providers, control, register, errors }: {
   const modelField = prefix === "primary" ? "model" : (`${prefix}.model` as const)
   const pid = useWatch({ control, name: providerField }) as string
   const provider = providers.find((p) => p.id === pid)
+  const suggestions = provider ? (provider.allowed_models.length ? provider.allowed_models : provider.suggested_models) : []
   const listId = `models-${prefix.replace(".", "-")}`
   const pidId = `${listId}-provider`
   const modelId = `${listId}-model`
@@ -144,9 +145,9 @@ function ModelPicker({ prefix, providers, control, register, errors }: {
       </div>
       <div className="space-y-1.5">
         <Label htmlFor={modelId}>Model</Label>
-        <Input id={modelId} list={listId} placeholder={provider?.allowed_models[0] ?? "model id"} aria-invalid={!!errors?.model} {...register(modelField)} />
+        <Input id={modelId} list={listId} placeholder={suggestions[0] ?? "model id"} aria-invalid={!!errors?.model} {...register(modelField)} />
         <datalist id={listId}>
-          {provider?.allowed_models.map((m) => (
+          {suggestions.map((m) => (
             <option key={m} value={m} />
           ))}
         </datalist>

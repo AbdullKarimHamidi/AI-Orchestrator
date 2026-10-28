@@ -2,7 +2,14 @@ from fastapi import APIRouter, Depends, Query
 
 from app.api.deps import Ctx, db_dep, require
 from app.repositories.audit import UsageRepository
-from app.schemas.providers import ConnectionTestOut, ProviderCreate, ProviderOut, ProviderUpdate
+from app.schemas.providers import (
+    ConnectionTestOut,
+    PresetAdd,
+    PresetOut,
+    ProviderCreate,
+    ProviderOut,
+    ProviderUpdate,
+)
 from app.services.providers import ProviderService, present
 
 router = APIRouter(prefix="/model-providers", tags=["models"])
@@ -16,6 +23,19 @@ async def list_providers(ctx: Ctx = Depends(require("providers:read")), db=Depen
 @router.post("", response_model=ProviderOut, status_code=201)
 async def create_provider(body: ProviderCreate, ctx: Ctx = Depends(require("providers:write")), db=Depends(db_dep)):
     return present(await ProviderService(db).create(ctx.workspace_id, ctx.user_id, body))
+
+
+@router.get("/presets", response_model=list[PresetOut])
+async def list_presets(ctx: Ctx = Depends(require("providers:read")), db=Depends(db_dep)):
+    """Free AI APIs that can be connected in one step, and whether each is set up already."""
+    return await ProviderService(db).presets(ctx.workspace_id)
+
+
+@router.post("/presets/{preset_id}", response_model=ProviderOut, status_code=201)
+async def add_preset(preset_id: str, body: PresetAdd, ctx: Ctx = Depends(require("providers:write")),
+                     db=Depends(db_dep)):
+    return present(await ProviderService(db).add_preset(ctx.workspace_id, ctx.user_id, preset_id, body.api_key,
+                                                        str(body.base_url) if body.base_url else None))
 
 
 @router.get("/usage", response_model=list[dict])

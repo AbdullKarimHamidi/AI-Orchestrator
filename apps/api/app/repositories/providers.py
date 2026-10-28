@@ -20,3 +20,6 @@ class ProviderRepository(ScopedRepository):
 
     async def by_kind(self, workspace_id: str, kind: str) -> dict | None:
         return await self.col.find_one({"workspace_id": workspace_id, "kind": kind})
+
+    async def by_preset(self, workspace_id: str, preset: str) -> dict | None:
+        return await self.col.find_one({"workspace_id": workspace_id, "preset": preset})
