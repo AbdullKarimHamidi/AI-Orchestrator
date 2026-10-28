@@ -8,8 +8,8 @@ import {
   agentSchema, agentVersionSchema, apiKeyCreatedSchema, apiKeySchema, auditEntrySchema, authConfigSchema,
   connectionTestSchema, dashboardSchema, documentSchema, invitationCreatedSchema, invitationSchema, knowledgeBaseSchema,
   mcpRemoteToolSchema, meSchema, searchHitSchema, toolSchema, toolTestSchema,
-  memberSchema, pageOf, providerSchema, rolesSchema, runEventSchema, runSchema, TERMINAL_STATUSES,
-  usageRowSchema, versionDiffSchema, workspaceSchema,
+  memberSchema, pageOf, presetSchema, providerSchema, rolesSchema, runEventSchema, runSchema, TERMINAL_STATUSES,
+  starterPackSchema, usageRowSchema, versionDiffSchema, workspaceSchema,
   type Agent, type AgentConfig, type Role, type Run,
 } from "@/lib/schemas"
 
@@ -54,6 +54,10 @@ export function useVersionDiff(ws: string | null, id: string, a?: number, b?: nu
 
 export function useProviders(ws: string | null) {
   return useQuery({ queryKey: qk.providers(ws), queryFn: () => api.get("/model-providers", z.array(providerSchema)), enabled: !!ws })
+}
+
+export function usePresets(ws: string | null) {
+  return useQuery({ queryKey: ["presets", ws], queryFn: () => api.get("/model-providers/presets", z.array(presetSchema)), enabled: !!ws })
 }
 
 export function useProviderUsage(ws: string | null, days = 30) {
@@ -128,6 +132,7 @@ export function useAgentMutations(ws: string | null) {
       onSuccess: (a: Agent) => invalidate(a.id),
     }),
     rollback: useMutation({ mutationFn: ({ id, version }: { id: string; version: number }) => api.post(`/agents/${id}/rollback`, agentSchema, { version }), onSuccess: (a) => invalidate(a.id) }),
+    starterPack: useMutation({ mutationFn: () => api.post("/agents/starter-pack", starterPackSchema), onSuccess: () => invalidate() }),
   }
 }
 
@@ -153,12 +158,19 @@ export function useRunMutations(ws: string | null) {
 
 export function useProviderMutations(ws: string | null) {
   const qc = useQueryClient()
-  const inv = () => qc.invalidateQueries({ queryKey: qk.providers(ws) })
+  const inv = () => {
+    qc.invalidateQueries({ queryKey: qk.providers(ws) })
+    qc.invalidateQueries({ queryKey: ["presets", ws] })
+  }
   return {
     create: useMutation({ mutationFn: (body: Record<string, unknown>) => api.post("/model-providers", providerSchema, body), onSuccess: inv }),
     update: useMutation({ mutationFn: ({ id, ...body }: { id: string } & Record<string, unknown>) => api.patch(`/model-providers/${id}`, providerSchema, body), onSuccess: inv }),
     remove: useMutation({ mutationFn: (id: string) => api.delete(`/model-providers/${id}`), onSuccess: inv }),
     test: useMutation({ mutationFn: (id: string) => api.post(`/model-providers/${id}/test`, connectionTestSchema), onSuccess: inv }),
+    addPreset: useMutation({
+      mutationFn: ({ id, ...body }: { id: string; api_key?: string; base_url?: string }) => api.post(`/model-providers/presets/${id}`, providerSchema, body),
+      onSuccess: inv,
+    }),
   }
 }
 

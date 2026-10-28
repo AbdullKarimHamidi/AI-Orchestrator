@@ -55,6 +55,8 @@ class ProviderOut(OutModel):
     base_url: str | None
     has_api_key: bool
     api_key_last4: str | None
+    preset: str | None = None
+    suggested_models: list[str] = Field(default_factory=list, description="Model picker suggestions, not enforced")
     allowed_models: list[str]
     timeout_seconds: int
     enabled: bool
@@ -69,3 +71,22 @@ class ConnectionTestOut(OutModel):
     latency_ms: int
     models: list[str]
     error: str | None = None
+
+
+class PresetOut(OutModel):
+    id: str
+    name: str
+    kind: ProviderKind
+    base_url: str | None
+    models: list[str]
+    signup_url: str
+    free_tier: str
+    needs_key: bool
+    env_var: str
+    env_configured: bool
+    provider_id: str | None
+
+
+class PresetAdd(ApiModel):
+    api_key: str | None = Field(default=None, min_length=1, max_length=500, description="Write-only")
+    base_url: HttpUrl | None = Field(default=None, description="Only for Ollama: where your server runs")

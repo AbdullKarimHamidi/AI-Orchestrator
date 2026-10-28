@@ -45,6 +45,15 @@ async def create_agent(body: AgentCreate, ctx: Ctx = Depends(require("agents:wri
     return await svc.present(ctx.workspace_id, await svc.create(ctx.workspace_id, ctx.user_id, body))
 
 
+@router.post("/starter-pack", response_model=dict[str, list[str]])
+async def install_starter_pack(ctx: Ctx = Depends(require("agents:publish")), db=Depends(db_dep)):
+    """Creates ready-to-run agents on the best free provider set up in this workspace, and moves
+    untouched starter agents onto it (for example after adding a Groq key)."""
+    from app.services.starter_agents import StarterAgentService
+
+    return await StarterAgentService(db).install(ctx.workspace_id, ctx.user_id)
+
+
 @router.get("/{agent_id}", response_model=AgentOut)
 async def get_agent(agent_id: str, ctx: Ctx = Depends(require("agents:read")), db=Depends(db_dep)):
     svc = AgentService(db)
