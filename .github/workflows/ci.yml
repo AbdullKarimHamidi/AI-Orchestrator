@@ -52,6 +52,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Start the full stack
+        env:
+          # mongo:8.0 refuses to start on the runners' Linux 6.19+ kernel (SERVER-121912).
+          MONGO_IMAGE: mongo:7.0
         run: |
           key=$(./scripts/new-key.sh)
           # CI uses the bundled mongo service, never the Atlas cluster from .env.example.
