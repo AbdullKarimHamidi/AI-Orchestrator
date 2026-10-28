@@ -59,6 +59,17 @@ class Settings(BaseSettings):
     # returns deterministic synthetic output with zero cost. It never calls a real model.
     demo_mode: bool = True
 
+    # Free AI APIs (see app/providers/presets.py). Each one that is set here is added to every
+    # workspace as a ready-made provider. OLLAMA_BASE_URL enables a local Ollama server.
+    groq_api_key: str = ""
+    gemini_api_key: str = ""
+    cerebras_api_key: str = ""
+    openrouter_api_key: str = ""
+    mistral_api_key: str = ""
+    ollama_base_url: str = ""
+    # New workspaces get a pack of ready-to-run agents on the best available free provider.
+    seed_starter_agents: bool = True
+
     run_events_retention_days: int = 90
     audit_retention_days: int = 365
 

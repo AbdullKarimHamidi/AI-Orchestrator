@@ -4,11 +4,12 @@ from pymongo.asynchronous.database import AsyncDatabase
 from pymongo.errors import DuplicateKeyError
 
 from app.core.config import get_settings
-from app.core.exceptions import Conflict, NotFound
+from app.core.exceptions import Conflict, NotFound, Unprocessable
 from app.core.ids import new_id
 from app.core.security import get_cipher
 from app.providers.base import ProviderConfig, ProviderError
 from app.providers.demo import DEMO_MODELS
+from app.providers.presets import FREE_PRESETS, PRESETS_BY_ID, Preset
 from app.providers.registry import build_adapter
 from app.repositories.audit import AuditRepository
 from app.repositories.base import now
@@ -18,10 +19,18 @@ from app.schemas.providers import ProviderCreate, ProviderUpdate
 DEMO_PROVIDER_NAME = "Demo (synthetic, no real model)"
 
 
+def _env_key(p: dict) -> str:
+    """Key for providers set up from an environment variable (read at call time, never stored)."""
+    return getattr(get_settings(), p["key_from_env"], "") if p.get("key_from_env") else ""
+
+
 def present(p: dict) -> dict:
     """Public representation. Never includes the encrypted or plaintext key."""
+    env_key = "" if p.get("api_key_enc") else _env_key(p)
     return {"id": p["_id"], "kind": p["kind"], "name": p["name"], "base_url": p.get("base_url"),
-            "has_api_key": bool(p.get("api_key_enc")), "api_key_last4": p.get("api_key_last4"),
+            "has_api_key": bool(p.get("api_key_enc") or env_key),
+            "api_key_last4": p.get("api_key_last4") or (env_key[-4:] if env_key else None),
+            "preset": p.get("preset"), "suggested_models": p.get("suggested_models", []),
             "allowed_models": p.get("allowed_models", []), "timeout_seconds": p.get("timeout_seconds", 60),
             "enabled": p.get("enabled", True), "pricing": p.get("pricing", {}),
             "health": p.get("health") or {"status": "unknown"}, "created_at": p["created_at"],
@@ -29,7 +38,7 @@ def present(p: dict) -> dict:
 
 
 def runtime_config(p: dict) -> ProviderConfig:
-    key = get_cipher().decrypt(p["api_key_enc"]) if p.get("api_key_enc") else None
+    key = get_cipher().decrypt(p["api_key_enc"]) if p.get("api_key_enc") else (_env_key(p) or None)
     return ProviderConfig(kind=p["kind"], api_key=key, base_url=p.get("base_url"),
                           timeout_seconds=float(p.get("timeout_seconds", 60)))
 
@@ -52,8 +61,67 @@ class ProviderService:
         except DuplicateKeyError:
             pass
 
+    async def ensure_presets(self, ws_id: str) -> None:
+        """Adds every free preset whose key (or Ollama URL) is set in the environment. The key stays
+        in the environment: the provider references it, so rotating the .env value just works."""
+        s = get_settings()
+        for preset in FREE_PRESETS:
+            value = getattr(s, preset.env_key, "")
+            if not value or await self.repo.by_preset(ws_id, preset.id):
+                continue
+            base_url = value.rstrip("/") if not preset.needs_key else preset.base_url
+            try:
+                await self.repo.insert(self._preset_doc(ws_id, preset, base_url) | (
+                    {"key_from_env": preset.env_key} if preset.needs_key else {}))
+            except DuplicateKeyError:
+                pass  # concurrent request, or the user already has a provider with this name
+
+    @staticmethod
+    def _preset_doc(ws_id: str, preset: Preset, base_url: str | None) -> dict:
+        t = now()
+        return {"_id": new_id("prv"), "workspace_id": ws_id, "kind": preset.kind, "name": preset.name,
+                "base_url": base_url, "preset": preset.id, "suggested_models": list(preset.models),
+                "allowed_models": [], "timeout_seconds": preset.timeout_seconds, "enabled": True, "pricing": {},
+                "health": {"status": "unknown"}, "created_at": t, "updated_at": t}
+
+    async def presets(self, ws_id: str) -> list[dict]:
+        """The free-provider catalog, with the workspace's provider for each one when it exists."""
+        s = get_settings()
+        out = []
+        for preset in FREE_PRESETS:
+            existing = await self.repo.by_preset(ws_id, preset.id)
+            out.append({"id": preset.id, "name": preset.name, "kind": preset.kind, "base_url": preset.base_url,
+                        "models": list(preset.models), "signup_url": preset.signup_url,
+                        "free_tier": preset.free_tier, "needs_key": preset.needs_key,
+                        "env_var": preset.env_key.upper(), "env_configured": bool(getattr(s, preset.env_key, "")),
+                        "provider_id": existing["_id"] if existing else None})
+        return out
+
+    async def add_preset(self, ws_id: str, user_id: str, preset_id: str, api_key: str | None,
+                         base_url: str | None) -> dict:
+        preset = PRESETS_BY_ID.get(preset_id)
+        if preset is None:
+            raise NotFound("Unknown free provider")
+        if await self.repo.by_preset(ws_id, preset_id):
+            raise Conflict(f"{preset.name} is already set up in this workspace", code="PRESET_EXISTS")
+        if preset.needs_key and not api_key:
+            raise Unprocessable(f"Paste your {preset.name} API key (get one at {preset.signup_url})",
+                                code="API_KEY_REQUIRED")
+        doc = self._preset_doc(ws_id, preset, (base_url or preset.base_url or "").rstrip("/") or None)
+        if api_key:
+            doc |= {"api_key_enc": get_cipher().encrypt(api_key), "api_key_last4": api_key[-4:],
+                    "key_rotated_at": now()}
+        try:
+            await self.repo.insert(doc)
+        except DuplicateKeyError as exc:
+            raise Conflict("A provider with this name already exists", code="NAME_TAKEN") from exc
+        await self.audit.record(ws_id, user_id, "provider.create", "provider", doc["_id"],
+                                {"kind": preset.kind, "preset": preset.id})
+        return doc
+
     async def list(self, ws_id: str) -> list[dict]:
         await self.ensure_demo(ws_id)
+        await self.ensure_presets(ws_id)
         items, _ = await self.repo.list(ws_id, sort=[("created_at", 1)], limit=200)
         return items
 

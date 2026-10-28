@@ -86,6 +86,8 @@ export const providerSchema = z.object({
   base_url: z.string().nullable(),
   has_api_key: z.boolean(),
   api_key_last4: z.string().nullable(),
+  preset: z.string().nullable().optional(),
+  suggested_models: z.array(z.string()).default([]),
   allowed_models: z.array(z.string()),
   timeout_seconds: z.number(),
   enabled: z.boolean(),
@@ -100,6 +102,27 @@ export const providerSchema = z.object({
   updated_at: z.string(),
 })
 export type Provider = z.infer<typeof providerSchema>
+
+export const presetSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  kind: providerKindSchema,
+  base_url: z.string().nullable(),
+  models: z.array(z.string()),
+  signup_url: z.string(),
+  free_tier: z.string(),
+  needs_key: z.boolean(),
+  env_var: z.string(),
+  env_configured: z.boolean(),
+  provider_id: z.string().nullable(),
+})
+export type Preset = z.infer<typeof presetSchema>
+
+export const starterPackSchema = z.object({
+  created: z.array(z.string()),
+  updated: z.array(z.string()),
+  skipped: z.array(z.string()),
+})
 
 export const connectionTestSchema = z.object({
   ok: z.boolean(),

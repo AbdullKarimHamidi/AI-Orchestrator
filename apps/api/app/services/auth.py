@@ -1,3 +1,4 @@
+import logging
 from datetime import timedelta
 
 from pymongo.asynchronous.database import AsyncDatabase
@@ -13,6 +14,8 @@ from app.repositories.base import now
 from app.repositories.identity import SessionRepository, UserRepository, WorkspaceRepository
 from app.schemas.auth import LoginRequest, PasswordChange, RegisterRequest
 from app.services.team import InvitationService
+
+log = logging.getLogger(__name__)
 
 
 class AuthService:
@@ -57,6 +60,8 @@ class AuthService:
             raise Conflict("An account with this email already exists", code="EMAIL_TAKEN") from exc
         audit_ws = ws["_id"] if ws else invite["workspace_id"]  # type: ignore[index]
         await self.audit.record(audit_ws, user["_id"], "auth.register", "user", user["_id"], ip=ip)
+        if ws is not None:
+            await self.seed_workspace(ws["_id"], user["_id"])
         token = await self._new_session(user["_id"], ip)
         return user, token
 
@@ -69,7 +74,20 @@ class AuthService:
                 await self.ws.insert(ws, session=s)
                 await self.ws.add_member(ws["_id"], user["_id"], "owner", session=s)
         await self.audit.record(ws["_id"], user["_id"], "workspace.create", "workspace", ws["_id"])
+        await self.seed_workspace(ws["_id"], user["_id"])
         return ws
+
+    async def seed_workspace(self, ws_id: str, user_id: str) -> None:
+        """Gives a new workspace its free providers and starter agents. Best effort: a seeding
+        problem must never block sign-up (the pack can be installed later from the Agents page)."""
+        if not get_settings().seed_starter_agents:
+            return
+        from app.services.starter_agents import StarterAgentService
+
+        try:
+            await StarterAgentService(self.db).install(ws_id, user_id)
+        except Exception:  # noqa: BLE001
+            log.exception("starter agent seeding failed for workspace %s", ws_id)
 
     async def change_password(self, user: dict, req: PasswordChange, current_token: str | None) -> None:
         """Verifies the current password, then signs out every other session of this user."""

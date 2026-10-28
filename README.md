@@ -45,6 +45,28 @@ Prerequisite: Docker (Docker Desktop on Windows/macOS).
 ```
 
 Open <http://localhost:3000>, register, then **Agents → New agent → provider "Demo" → Test console**.
+
+### Free AI models (no paid account needed)
+
+Every new workspace comes with 8 ready-to-run **starter agents** (General Assistant, Code Helper, Writer & Editor,
+Summarizer, Translator, Customer Support, Data Extractor, Idea Generator). To make them answer with a real model
+for free, connect one or more free AI APIs, either in `.env` (applies to every workspace) or in the app under
+**Models → Free AI providers** (paste a key, click Connect):
+
+| Provider | Free key from | `.env` variable | Notes |
+| --- | --- | --- | --- |
+| Groq | <https://console.groq.com/keys> | `GROQ_API_KEY` | Very fast Llama / gpt-oss models |
+| Google Gemini | <https://aistudio.google.com/apikey> | `GEMINI_API_KEY` | gemini-2.5-flash free tier |
+| Cerebras | <https://cloud.cerebras.ai/> | `CEREBRAS_API_KEY` | gpt-oss-120b, llama3.1-8b |
+| OpenRouter | <https://openrouter.ai/keys> | `OPENROUTER_API_KEY` | Only models ending in `:free` are free |
+| Mistral | <https://console.mistral.ai/api-keys> | `MISTRAL_API_KEY` | Free "Experiment" plan |
+| Ollama (local) | <https://ollama.com/download> | `OLLAMA_BASE_URL` | No key, no limits; `ollama pull llama3.2` first |
+
+Then click **Agents → Install starter agents**: the agents move onto your best connected provider (Groq, then
+Gemini, Cerebras, OpenRouter, Mistral, Ollama) with the others as automatic fallbacks, so a free tier hitting
+its rate limit does not stop a run. Agents you have edited are left alone. For existing installs,
+`python -m app.cli setup-free` does the same for every workspace. Free model lineups change; **Test connection**
+on a provider shows the models your key can use today.
 API docs (Swagger) are at <http://localhost:8000/api/docs>.
 
 Database: the project uses MongoDB Atlas. Set `MONGODB_URI` (and `MONGODB_DB=AI`) in `.env`; with Docker, set

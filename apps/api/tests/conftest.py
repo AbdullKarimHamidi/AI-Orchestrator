@@ -8,6 +8,7 @@ os.environ.setdefault("MONGODB_URI", "mongodb://127.0.0.1:27017/?replicaSet=rs0"
 os.environ["MONGODB_DB"] = f"orch_test_{uuid.uuid4().hex[:8]}"
 os.environ["ENVIRONMENT"] = "test"
 os.environ["DEMO_MODE"] = "true"
+os.environ["SEED_STARTER_AGENTS"] = "false"  # tests count agents; test_free_providers turns it on
 os.environ["REGISTER_RATE_LIMIT_PER_MINUTE"] = "10000"
 os.environ["ENCRYPTION_KEYS"] = base64.urlsafe_b64encode(b"test-only-key-not-for-production").decode()
 

@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Free AI providers: one-step setup for Groq, Google Gemini, Cerebras, OpenRouter (`:free` models), Mistral and
+  local Ollama, from `.env` (`GROQ_API_KEY`, `GEMINI_API_KEY`, ... `OLLAMA_BASE_URL`) or Models → Free AI providers.
+  Keys set in `.env` are read at call time and never stored in the database.
+- Starter agents: 8 ready-to-run agents in every new workspace, on the best connected free provider with the
+  others as fallbacks (Demo when none). Agents → Install starter agents, or `python -m app.cli setup-free`.
+- Providers now carry suggested models for the model picker without restricting them like an allowlist.
+
 ## 0.3.1
 
 - User guide with screenshots: `docs/user-guide.pdf`.
