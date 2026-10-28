@@ -6,6 +6,7 @@ FastAPI control plane, a separate background worker for durable execution, and M
 and with real OpenAI, Anthropic, Gemini or any OpenAI-compatible endpoint once you add a key.
 
 User guide (PDF): [`docs/user-guide.pdf`](docs/user-guide.pdf) · Architecture: [`docs/architecture.md`](docs/architecture.md) · Production: [`docs/deployment.md`](docs/deployment.md)
+· **Beginner: run it and put it live for free** (Render + Vercel + Atlas): [`docs/go-live.md`](docs/go-live.md)
 · Long-range design: [`enterprise-ai-orchestration-blueprint.md`](enterprise-ai-orchestration-blueprint.md)
 
 ## What works today
