@@ -12,19 +12,15 @@ concurrency:
 jobs:
   api:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: apps/api
     steps:
       - uses: actions/checkout@v4
       - name: Start MongoDB (single-node replica set)
-        run: |
-          docker run -d --name mongo -p 27017:27017 mongo:8.0 --replSet rs0 --bind_ip_all
-          for i in $(seq 1 30); do
-            docker exec mongo mongosh --quiet --eval "try { rs.status().ok } catch (e) { rs.initiate({_id:'rs0',members:[{_id:0,host:'127.0.0.1:27017'}]}).ok }" && break
-            sleep 2
-          done
-          until docker exec mongo mongosh --quiet --eval "rs.status().myState" | grep -q 1; do sleep 1; done
+        working-directory: .
+        run: ./scripts/ci-mongo.sh
       - uses: astral-sh/setup-uv@v6
       - run: uv sync --group dev
       - run: uv run ruff check app tests
@@ -32,6 +28,7 @@ jobs:
 
   web:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: apps/web
@@ -51,12 +48,15 @@ jobs:
   e2e:
     needs: [api, web]
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Start the full stack
         run: |
           key=$(./scripts/new-key.sh)
-          sed "s|^ENCRYPTION_KEYS=.*|ENCRYPTION_KEYS=$key|" .env.example > .env
+          # CI uses the bundled mongo service, never the Atlas cluster from .env.example.
+          sed -e "s|^ENCRYPTION_KEYS=.*|ENCRYPTION_KEYS=$key|" \
+              -e "s|^COMPOSE_MONGODB_URI=.*|COMPOSE_MONGODB_URI=mongodb://mongo:27017/?replicaSet=rs0|" .env.example > .env
           docker compose up --build -d --wait
       - uses: actions/setup-node@v4
         with:
