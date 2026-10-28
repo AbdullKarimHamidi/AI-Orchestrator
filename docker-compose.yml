@@ -1,0 +1,78 @@
+# Local / demo deployment: web, api, worker, mongo.
+# No Redis or external queue (see docs/architecture.md).
+# Start: docker compose up --build
+# Copy .env.example to .env and set ENCRYPTION_KEYS first.
+
+name: orchestrator
+
+services:
+  mongo:
+    image: mongo:8.0
+    restart: unless-stopped
+    # Single-node replica set required for multi-document transactions
+    # and lease claiming with majority writes.
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      # Expose MongoDB to local tools such as MongoDB Compass.
+      - "127.0.0.1:27018:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      # Initiate the replica set on first boot, then check its status.
+      test: >
+        mongosh --quiet --eval "try { rs.status().ok } catch (e) { rs.initiate({_id: 'rs0', members: [{_id: 0, host: 'mongo:27017'}]}).ok }"
+      interval: 5s
+      timeout: 10s
+      retries: 30
+      start_period: 10s
+
+  api:
+    build: ./apps/api
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      MONGODB_URI: ${COMPOSE_MONGODB_URI:-mongodb://mongo:27017/?replicaSet=rs0}
+    depends_on:
+      mongo:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8000:8000"
+
+  worker:
+    build: ./apps/api
+    restart: unless-stopped
+    # A crashed worker restarts; runs are recovered via lease expiry.
+    command: ["python", "-m", "app.workers.main"]
+    env_file: .env
+    environment:
+      MONGODB_URI: ${COMPOSE_MONGODB_URI:-mongodb://mongo:27017/?replicaSet=rs0}
+    depends_on:
+      api:
+        condition: service_healthy
+    # Allow in-flight runs to be released back to the queue.
+    stop_grace_period: 30s
+    # The worker has no HTTP server; health is checked via heartbeat.
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.workers.health"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 20s
+    deploy:
+      # Runs are claimed using atomic leases.
+      replicas: 1
+
+  web:
+    build:
+      context: ./apps/web
+      args:
+        API_INTERNAL_URL: "http://api:8000"
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:3000:3000"
+
+volumes:
+  mongo-data:

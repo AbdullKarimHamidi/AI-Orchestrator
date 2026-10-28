@@ -1,0 +1,15 @@
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+	# Server-Sent Events (run streams) must not be buffered.
+	reverse_proxy web:3000 {
+		flush_interval -1
+	}
+}

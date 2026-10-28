@@ -1,0 +1,48 @@
+# Production overlay: HTTPS via Caddy (automatic Let's Encrypt certificates), production
+# settings enforced, nothing but ports 80/443 exposed on the host.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# Requires in .env: DOMAIN (DNS A/AAAA record pointing at this server), ACME_EMAIL,
+# ENCRYPTION_KEYS. See docs/deployment.md.
+services:
+  api:
+    environment:
+      ENVIRONMENT: production
+      COOKIE_SECURE: "true"
+      PUBLIC_URL: https://${DOMAIN:?set DOMAIN in .env}
+      CORS_ORIGINS: https://${DOMAIN}
+    ports: !reset []
+
+  worker:
+    environment:
+      ENVIRONMENT: production
+      COOKIE_SECURE: "true"
+      PUBLIC_URL: https://${DOMAIN}
+    deploy:
+      replicas: ${WORKER_REPLICAS:-2}
+
+  web:
+    ports: !reset []
+
+  caddy:
+    image: caddy:2.10
+    restart: unless-stopped
+    depends_on:
+      web:
+        condition: service_started
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  caddy-data:
+  caddy-config:

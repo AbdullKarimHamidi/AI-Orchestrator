@@ -1,0 +1,2279 @@
+[
+  {
+    "id": "unversioned_agent",
+    "mutation": "remove agent.version from nodes.research-a (rejected by the schema; the graph-level pinning rule is defense-in-depth)",
+    "expected_error": "SCHEMA",
+    "definition": {
+      "meta": {
+        "name": "research-brief",
+        "workspace_id": "ws_main",
+        "version": 3,
+        "description": "Search, draft, and review a research brief with human approval."
+      },
+      "graph": {
+        "nodes": [
+          {
+            "id": "start",
+            "type": "start",
+            "workspace_id": "ws_main",
+            "next": "research-a"
+          },
+          {
+            "id": "research-a",
+            "type": "agent",
+            "workspace_id": "ws_main",
+            "agent": {
+              "ref": "org/research-agent"
+            },
+            "input": {
+              "query_template": "{{ graph.inputs.topic }}"
+            },
+            "next": "fan-out"
+          },
+          {
+            "id": "fan-out",
+            "type": "parallel",
+            "workspace_id": "ws_main",
+            "branches": [
+              {
+                "next": "summarize"
+              },
+              {
+                "next": "extract-entities"
+              }
+            ]
+          },
+          {
+            "id": "summarize",
+            "type": "tool",
+            "workspace_id": "ws_main",
+            "tool": {
+              "ref": "org/web_search",
+              "version": 2,
+              "config": {
+                "max_results": 5
+              }
+            },
+            "input_mapping": {
+              "query": "{{ nodes['research-a'].output.query }}"
+            },
+            "timeout_seconds": 30,
+            "retry": {
+              "max_attempts": 2,
+              "backoff": "exponential"
+            },
+            "next": "join"
+          },
+          {
+            "id": "extract-entities",
+            "type": "model_invoke",
+            "workspace_id": "ws_main",
+            "model_alias": "gpt-4.1-mini-cheap",
+            "prompt_template": "Extract entities from:\n{{ nodes['research-a'].output.query }}",
+            "output_schema_ref": "org/schemas/entities",
+            "next": "join"
+          },
+          {
+            "id": "join",
+            "type": "join",
+            "workspace_id": "ws_main",
+            "strategy": "all",
+            "timeout_seconds": 120
+          },
+          {
+            "id": "review-loop",
+            "type": "loop",
+            "workspace_id": "ws_main",
+            "body_start": "review-agent",
+            "max_iterations": 3,
+            "break_condition": "{\"==\": [{\"var\": \"nodes.review-agent.output.approved\"}, true]}",
+            "on_exhaustion": "fail"
+          },
+          {
+            "id": "review-agent",
+            "type": "agent",
+            "workspace_id": "ws_main",
+            "agent": {
+              "ref": "org/critic-agent",
+              "version": 2
+            },
+            "input": {
+              "draft": "{{ nodes.synthesis.output.brief }}"
+            },
+            "next": "condition-review"
+          },
+          {
+            "id": "condition-review",
+            "type": "condition",
+            "workspace_id": "ws_main",
+            "branches": [
+              {
+                "condition": "{\"==\": [{\"var\": \"nodes.review-agent.output.approved\"}, true]}",
+                "next": "approval"
+              },
+              {
+                "condition": "default",
+                "next": "review-loop"
+              }
+            ]
+          },
+          {
+            "id": "synthesis",
+            "type": "model_invoke",
+            "workspace_id": "ws_main",
+            "model_alias": "gpt-4.1",
+            "prompt_template": "Write a research brief on {{ graph.inputs.topic }} using findings:\n{{ nodes.summarize.output.results }}\nEntities:\n{{ nodes['extract-entities'].output.entities }}",
+            "max_tokens": 2000,
+            "next": "review-loop"
+          },
+          {
+            "id": "approval",
+            "type": "approval",
+            "workspace_id": "ws_main",
+            "policy": {
+              "approvers": [
+                "role:research-lead"
+              ],
+              "expire_seconds": 3600
+            },
+            "on_failure": "end-failed"
+          },
+          {
+            "id": "error-handler",
+            "type": "error_handler",
+            "workspace_id": "ws_main",
+            "strategy": {
+              "compensation": "org/compensations/cleanup-webhooks",
+              "notify": [
+                "ops-oncall"
+              ]
+            },
+            "next": "end-failed"
+          },
+          {
+            "id": "end",
+            "type": "end",
+            "workspace_id": "ws_main",
+            "outcome": "success",
+            "required_outputs": [
+              "$.nodes.synthesis.output.brief"
+            ]
+          },
+          {
+            "id": "end-failed",
+            "type": "end",
+            "workspace_id": "ws_main",
+            "outcome": "failure"
+          }
+        ],
+        "edges": [
+          {
+            "from": "start",
+            "to": "research-a"
+          },
+          {
+            "from": "research-a",
+            "to": "fan-out"
+          },
+          {
+            "from": "fan-out",
+            "to": "summarize"
+          },
+          {
+            "from": "fan-out",
+            "to": "extract-entities"
+          },
+          {
+            "from": "summarize",
+            "to": "join"
+          },
+          {
+            "from": "extract-entities",
+            "to": "join"
+          },
+          {
+            "from": "join",
+            "to": "synthesis"
+          },
+          {
+            "from": "synthesis",
+            "to": "review-loop"
+          },
+          {
+            "from": "review-loop",
+            "to": "review-agent"
+          },
+          {
+            "from": "review-agent",
+            "to": "condition-review"
+          },
+          {
+            "from": "condition-review",
+            "to": "approval",
+            "condition": "{\"==\": [{\"var\": \"nodes.review-agent.output.approved\"}, true]}"
+          },
+          {
+            "from": "condition-review",
+            "to": "review-loop",
+            "condition": "default"
+          },
+          {
+            "from": "synthesis",
+            "to": "error-handler",
+            "kind": "error"
+          },
+          {
+            "from": "approval",
+            "to": "end",
+            "kind": "approval_result"
+          },
+          {
+            "from": "approval",
+            "to": "end-failed",
+            "kind": "error"
+          },
+          {
+            "from": "error-handler",
+            "to": "end-failed"
+          }
+        ],
+        "budget": {
+          "limits": {
+            "run_usd_max": 2.0,
+            "run_tokens_max": 120000,
+            "run_seconds_max": 1800
+          }
+        },
+        "policies": {
+          "on_node_error": "halt",
+          "data_retention_days": 30
+        }
+      }
+    }
+  },
+  {
+    "id": "unbounded_cycle",
+    "mutation": "add condition back-edge synthesis -> research-a (cycle without a loop node)",
+    "expected_error": "UNBOUNDED",
+    "definition": {
+      "meta": {
+        "name": "research-brief",
+        "workspace_id": "ws_main",
+        "version": 3,
+        "description": "Search, draft, and review a research brief with human approval."
+      },
+      "graph": {
+        "nodes": [
+          {
+            "id": "start",
+            "type": "start",
+            "workspace_id": "ws_main",
+            "next": "research-a"
+          },
+          {
+            "id": "research-a",
+            "type": "agent",
+            "workspace_id": "ws_main",
+            "agent": {
+              "ref": "org/research-agent",
+              "version": 4
+            },
+            "input": {
+              "query_template": "{{ graph.inputs.topic }}"
+            },
+            "next": "fan-out"
+          },
+          {
+            "id": "fan-out",
+            "type": "parallel",
+            "workspace_id": "ws_main",
+            "branches": [
+              {
+                "next": "summarize"
+              },
+              {
+                "next": "extract-entities"
+              }
+            ]
+          },
+          {
+            "id": "summarize",
+            "type": "tool",
+            "workspace_id": "ws_main",
+            "tool": {
+              "ref": "org/web_search",
+              "version": 2,
+              "config": {
+                "max_results": 5
+              }
+            },
+            "input_mapping": {
+              "query": "{{ nodes['research-a'].output.query }}"
+            },
+            "timeout_seconds": 30,
+            "retry": {
+              "max_attempts": 2,
+              "backoff": "exponential"
+            },
+            "next": "join"
+          },
+          {
+            "id": "extract-entities",
+            "type": "model_invoke",
+            "workspace_id": "ws_main",
+            "model_alias": "gpt-4.1-mini-cheap",
+            "prompt_template": "Extract entities from:\n{{ nodes['research-a'].output.query }}",
+            "output_schema_ref": "org/schemas/entities",
+            "next": "join"
+          },
+          {
+            "id": "join",
+            "type": "join",
+            "workspace_id": "ws_main",
+            "strategy": "all",
+            "timeout_seconds": 120
+          },
+          {
+            "id": "review-loop",
+            "type": "loop",
+            "workspace_id": "ws_main",
+            "body_start": "review-agent",
+            "max_iterations": 3,
+            "break_condition": "{\"==\": [{\"var\": \"nodes.review-agent.output.approved\"}, true]}",
+            "on_exhaustion": "fail"
+          },
+          {
+            "id": "review-agent",
+            "type": "agent",
+            "workspace_id": "ws_main",
+            "agent": {
+              "ref": "org/critic-agent",
+              "version": 2
+            },
+            "input": {
+              "draft": "{{ nodes.synthesis.output.brief }}"
+            },
+            "next": "condition-review"
+          },
+          {
+            "id": "condition-review",
+            "type": "condition",
+            "workspace_id": "ws_main",
+            "branches": [
+              {
+                "condition": "{\"==\": [{\"var\": \"nodes.review-agent.output.approved\"}, true]}",
+                "next": "approval"
+              },
+              {
+                "condition": "default",
+                "next": "review-loop"
+              }
+            ]
+          },
+          {
+            "id": "synthesis",
+            "type": "model_invoke",
+            "workspace_id": "ws_main",
+            "model_alias": "gpt-4.1",
+            "prompt_template": "Write a research brief on {{ graph.inputs.topic }} using findings:\n{{ nodes.summarize.output.results }}\nEntities:\n{{ nodes['extract-entities'].output.entities }}",
+            "max_tokens": 2000,
+            "next": "review-loop"
+          },
+          {
+            "id": "approval",
+            "type": "approval",
+            "workspace_id": "ws_main",
+            "policy": {
+              "approvers": [
+                "role:research-lead"
+              ],
+              "expire_seconds": 3600
+            },
+            "on_failure": "end-failed"
+          },
+          {
+            "id": "error-handler",
+            "type": "error_handler",
+            "workspace_id": "ws_main",
+            "strategy": {
+              "compensation": "org/compensations/cleanup-webhooks",
+              "notify": [
+                "ops-oncall"
+              ]
+            },
+            "next": "end-failed"
+          },
+          {
+            "id": "end",
+            "type": "end",
+            "workspace_id": "ws_main",
+            "outcome": "success",
+            "required_outputs": [
+              "$.nodes.synthesis.output.brief"
+            ]
+          },
+          {
+            "id": "end-failed",
+            "type": "end",
+            "workspace_id": "ws_main",
+            "outcome": "failure"
+          }
+        ],
+        "edges": [
+          {
+            "from": "start",
+            "to": "research-a"
+          },
+          {
+            "from": "research-a",
+            "to": "fan-out"
+          },
+          {
+            "from": "fan-out",
+            "to": "summarize"
+          },
+          {
+            "from": "fan-out",
+            "to": "extract-entities"
+          },
+          {
+            "from": "summarize",
+            "to": "join"
+          },
+          {
+            "from": "extract-entities",
+            "to": "join"
+          },
+          {
+            "from": "join",
+            "to": "synthesis"
+          },
+          {
+            "from": "synthesis",
+            "to": "review-loop"
+          },
+          {
+            "from": "review-loop",
+            "to": "review-agent"
+          },
+          {
+            "from": "review-agent",
+            "to": "condition-review"
+          },
+          {
+            "from": "condition-review",
+            "to": "approval",
+            "condition": "{\"==\": [{\"var\": \"nodes.review-agent.output.approved\"}, true]}"
+          },
+          {
+            "from": "condition-review",
+            "to": "review-loop",
+            "condition": "default"
+          },
+          {
+            "from": "synthesis",
+            "to": "error-handler",
+            "kind": "error"
+          },
+          {
+            "from": "approval",
+            "to": "end",
+            "kind": "approval_result"
+          },
+          {
+            "from": "approval",
+            "to": "end-failed",
+            "kind": "error"
+          },
+          {
+            "from": "error-handler",
+            "to": "end-failed"
+          },
+          {
+            "from": "synthesis",
+            "to": "research-a",
+            "condition": "default"
+          }
+        ],
+        "budget": {
+          "limits": {
+            "run_usd_max": 2.0,
+            "run_tokens_max": 120000,
+            "run_seconds_max": 1800
+          }
+        },
+        "policies": {
+          "on_node_error": "halt",
+          "data_retention_days": 30
+        }
+      }
+    }
+  },
+  {
+    "id": "missing_budget",
+    "mutation": "delete graph.budget",
+    "expected_error": "SCHEMA",
+    "definition": {
+      "meta": {
+        "name": "research-brief",
+        "workspace_id": "ws_main",
+        "version": 3,
+        "description": "Search, draft, and review a research brief with human approval."
+      },
+      "graph": {
+        "nodes": [
+          {
+            "id": "start",
+            "type": "start",
+            "workspace_id": "ws_main",
+            "next": "research-a"
+          },
+          {
+            "id": "research-a",
+            "type": "agent",
+            "workspace_id": "ws_main",
+            "agent": {
+              "ref": "org/research-agent",
+              "version": 4
+            },
+            "input": {
+              "query_template": "{{ graph.inputs.topic }}"
+            },
+            "next": "fan-out"
+          },
+          {
+            "id": "fan-out",
+            "type": "parallel",
+            "workspace_id": "ws_main",
+            "branches": [
+              {
+                "next": "summarize"
+              },
+              {
+                "next": "extract-entities"
+              }
+            ]
+          },
+          {
+            "id": "summarize",
+            "type": "tool",
+            "workspace_id": "ws_main",
+            "tool": {
+              "ref": "org/web_search",
+              "version": 2,
+              "config": {
+                "max_results": 5
+              }
+            },
+            "input_mapping": {
+              "query": "{{ nodes['research-a'].output.query }}"
+            },
+            "timeout_seconds": 30,
+            "retry": {
+              "max_attempts": 2,
+              "backoff": "exponential"
+            },
+            "next": "join"
+          },
+          {
+            "id": "extract-entities",
+            "type": "model_invoke",
+            "workspace_id": "ws_main",
+            "model_alias": "gpt-4.1-mini-cheap",
+            "prompt_template": "Extract entities from:\n{{ nodes['research-a'].output.query }}",
+            "output_schema_ref": "org/schemas/entities",
+            "next": "join"
+          },
+          {
+            "id": "join",
+            "type": "join",
+            "workspace_id": "ws_main",
+            "strategy": "all",
+            "timeout_seconds": 120
+          },
+          {
+            "id": "review-loop",
+            "type": "loop",
+            "workspace_id": "ws_main",
+            "body_start": "review-agent",
+            "max_iterations": 3,
+            "break_condition": "{\"==\": [{\"var\": \"nodes.review-agent.output.approved\"}, true]}",
+            "on_exhaustion": "fail"
+          },
+          {
+            "id": "review-agent",
+            "type": "agent",
+            "workspace_id": "ws_main",
+            "agent": {
+              "ref": "org/critic-agent",
+              "version": 2
+            },
+            "input": {
+              "draft": "{{ nodes.synthesis.output.brief }}"
+            },
+            "next": "condition-review"
+          },
+          {
+            "id": "condition-review",
+            "type": "condition",
+            "workspace_id": "ws_main",
+            "branches": [
+              {
+                "condition": "{\"==\": [{\"var\": \"nodes.review-agent.output.approved\"}, true]}",
+                "next": "approval"
+              },
+              {
+                "condition": "default",
+                "next": "review-loop"
+              }
+            ]
+          },
+          {
+            "id": "synthesis",
+            "type": "model_invoke",
+            "workspace_id": "ws_main",
+            "model_alias": "gpt-4.1",
+            "prompt_template": "Write a research brief on {{ graph.inputs.topic }} using findings:\n{{ nodes.summarize.output.results }}\nEntities:\n{{ nodes['extract-entities'].output.entities }}",
+            "max_tokens": 2000,
+            "next": "review-loop"
+          },
+          {
+            "id": "approval",
+            "type": "approval",
+            "workspace_id": "ws_main",
+            "policy": {
+              "approvers": [
+                "role:research-lead"
+              ],
+              "expire_seconds": 3600
+            },
+            "on_failure": "end-failed"
+          },
+          {
+            "id": "error-handler",
+            "type": "error_handler",
+            "workspace_id": "ws_main",
+            "strategy": {
+              "compensation": "org/compensations/cleanup-webhooks",
+              "notify": [
+                "ops-oncall"
+              ]
+            },
+            "next": "end-failed"
+          },
+          {
+            "id": "end",
+            "type": "end",
+            "workspace_id": "ws_main",
+            "outcome": "success",
+            "required_outputs": [
+              "$.nodes.synthesis.output.brief"
+            ]
+          },
+          {
+            "id": "end-failed",
+            "type": "end",
+            "workspace_id": "ws_main",
+            "outcome": "failure"
+          }
+        ],
+        "edges": [
+          {
+            "from": "start",
+            "to": "research-a"
+          },
+          {
+            "from": "research-a",
+            "to": "fan-out"
+          },
+          {
+            "from": "fan-out",
+            "to": "summarize"
+          },
+          {
+            "from": "fan-out",
+            "to": "extract-entities"
+          },
+          {
+            "from": "summarize",
+            "to": "join"
+          },
+          {
+            "from": "extract-entities",
+            "to": "join"
+          },
+          {
+            "from": "join",
+            "to": "synthesis"
+          },
+          {
+            "from": "synthesis",
+            "to": "review-loop"
+          },
+          {
+            "from": "review-loop",
+            "to": "review-agent"
+          },
+          {
+            "from": "review-agent",
+            "to": "condition-review"
+          },
+          {
+            "from": "condition-review",
+            "to": "approval",
+            "condition": "{\"==\": [{\"var\": \"nodes.review-agent.output.approved\"}, true]}"
+          },
+          {
+            "from": "condition-review",
+            "to": "review-loop",
+            "condition": "default"
+          },
+          {
+            "from": "synthesis",
+            "to": "error-handler",
+            "kind": "error"
+          },
+          {
+            "from": "approval",
+            "to": "end",
+            "kind": "approval_result"
+          },
+          {
+            "from": "approval",
+            "to": "end-failed",
+            "kind": "error"
+          },
+          {
+            "from": "error-handler",
+            "to": "end-failed"
+          }
+        ],
+        "policies": {
+          "on_node_error": "halt",
+          "data_retention_days": 30
+        }
+      }
+    }
+  },
+  {
+    "id": "loop_without_max_iterations",
+    "mutation": "remove max_iterations from review-loop",
+    "expected_error": "SCHEMA",
+    "definition": {
+      "meta": {
+        "name": "research-brief",
+        "workspace_id": "ws_main",
+        "version": 3,
+        "description": "Search, draft, and review a research brief with human approval."
+      },
+      "graph": {
+        "nodes": [
+          {
+            "id": "start",
+            "type": "start",
+            "workspace_id": "ws_main",
+            "next": "research-a"
+          },
+          {
+            "id": "research-a",
+            "type": "agent",
+            "workspace_id": "ws_main",
+            "agent": {
+              "ref": "org/research-agent",
+              "version": 4
+            },
+            "input": {
+              "query_template": "{{ graph.inputs.topic }}"
+            },
+            "next": "fan-out"
+          },
+          {
+            "id": "fan-out",
+            "type": "parallel",
+            "workspace_id": "ws_main",
+            "branches": [
+              {
+                "next": "summarize"
+              },
+              {
+                "next": "extract-entities"
+              }
+            ]
+          },
+          {
+            "id": "summarize",
+            "type": "tool",
+            "workspace_id": "ws_main",
+            "tool": {
+              "ref": "org/web_search",
+              "version": 2,
+              "config": {
+                "max_results": 5
+              }
+            },
+            "input_mapping": {
+              "query": "{{ nodes['research-a'].output.query }}"
+            },
+            "timeout_seconds": 30,
+            "retry": {
+              "max_attempts": 2,
+              "backoff": "exponential"
+            },
+            "next": "join"
+          },
+          {
+            "id": "extract-entities",
+            "type": "model_invoke",
+            "workspace_id": "ws_main",
+            "model_alias": "gpt-4.1-mini-cheap",
+            "prompt_template": "Extract entities from:\n{{ nodes['research-a'].output.query }}",
+            "output_schema_ref": "org/schemas/entities",
+            "next": "join"
+          },
+          {
+            "id": "join",
+            "type": "join",
+            "workspace_id": "ws_main",
+            "strategy": "all",
+            "timeout_seconds": 120
+          },
+          {
+            "id": "review-loop",
+            "type": "loop",
+            "workspace_id": "ws_main",
+            "body_start": "review-agent",
+            "break_condition": "{\"==\": [{\"var\": \"nodes.review-agent.output.approved\"}, true]}",
+            "on_exhaustion": "fail"
+          },
+          {
+            "id": "review-agent",
+            "type": "agent",
+            "workspace_id": "ws_main",
+            "agent": {
+              "ref": "org/critic-agent",
+              "version": 2
+            },
+            "input": {
+              "draft": "{{ nodes.synthesis.output.brief }}"
+            },
+            "next": "condition-review"
+          },
+          {
+            "id": "condition-review",
+            "type": "condition",
+            "workspace_id": "ws_main",
+            "branches": [
+              {
+                "condition": "{\"==\": [{\"var\": \"nodes.review-agent.output.approved\"}, true]}",
+                "next": "approval"
+              },
+              {
+                "condition": "default",
+                "next": "review-loop"
+              }
+            ]
+          },
+          {
+            "id": "synthesis",
+            "type": "model_invoke",
+            "workspace_id": "ws_main",
+            "model_alias": "gpt-4.1",
+            "prompt_template": "Write a research brief on {{ graph.inputs.topic }} using findings:\n{{ nodes.summarize.output.results }}\nEntities:\n{{ nodes['extract-entities'].output.entities }}",
+            "max_tokens": 2000,
+            "next": "review-loop"
+          },
+          {
+            "id": "approval",
+            "type": "approval",
+            "workspace_id": "ws_main",
+            "policy": {
+              "approvers": [
+                "role:research-lead"
+              ],
+              "expire_seconds": 3600
+            },
+            "on_failure": "end-failed"
+          },
+          {
+            "id": "error-handler",
+            "type": "error_handler",
+            "workspace_id": "ws_main",
+            "strategy": {
+              "compensation": "org/compensations/cleanup-webhooks",
+              "notify": [
+                "ops-oncall"
+              ]
+            },
+            "next": "end-failed"
+          },
+          {
+            "id": "end",
+            "type": "end",
+            "workspace_id": "ws_main",
+            "outcome": "success",
+            "required_outputs": [
+              "$.nodes.synthesis.output.brief"
+            ]
+          },
+          {
+            "id": "end-failed",
+            "type": "end",
+            "workspace_id": "ws_main",
+            "outcome": "failure"
+          }
+        ],
+        "edges": [
+          {
+            "from": "start",
+            "to": "research-a"
+          },
+          {
+            "from": "research-a",
+            "to": "fan-out"
+          },
+          {
+            "from": "fan-out",
+            "to": "summarize"
+          },
+          {
+            "from": "fan-out",
+            "to": "extract-entities"
+          },
+          {
+            "from": "summarize",
+            "to": "join"
+          },
+          {
+            "from": "extract-entities",
+            "to": "join"
+          },
+          {
+            "from": "join",
+            "to": "synthesis"
+          },
+          {
+            "from": "synthesis",
+            "to": "review-loop"
+          },
+          {
+            "from": "review-loop",
+            "to": "review-agent"
+          },
+          {
+            "from": "review-agent",
+            "to": "condition-review"
+          },
+          {
+            "from": "condition-review",
+            "to": "approval",
+            "condition": "{\"==\": [{\"var\": \"nodes.review-agent.output.approved\"}, true]}"
+          },
+          {
+            "from": "condition-review",
+            "to": "review-loop",
+            "condition": "default"
+          },
+          {
+            "from": "synthesis",
+            "to": "error-handler",
+            "kind": "error"
+          },
+          {
+            "from": "approval",
+            "to": "end",
+            "kind": "approval_result"
+          },
+          {
+            "from": "approval",
+            "to": "end-failed",
+            "kind": "error"
+          },
+          {
+            "from": "error-handler",
+            "to": "end-failed"
+          }
+        ],
+        "budget": {
+          "limits": {
+            "run_usd_max": 2.0,
+            "run_tokens_max": 120000,
+            "run_seconds_max": 1800
+          }
+        },
+        "policies": {
+          "on_node_error": "halt",
+          "data_retention_days": 30
+        }
+      }
+    }
+  },
+  {
+    "id": "loop_without_exhaustion_policy",
+    "mutation": "remove on_exhaustion from review-loop",
+    "expected_error": "SCHEMA",
+    "definition": {
+      "meta": {
+        "name": "research-brief",
+        "workspace_id": "ws_main",
+        "version": 3,
+        "description": "Search, draft, and review a research brief with human approval."
+      },
+      "graph": {
+        "nodes": [
+          {
+            "id": "start",
+            "type": "start",
+            "workspace_id": "ws_main",
+            "next": "research-a"
+          },
+          {
+            "id": "research-a",
+            "type": "agent",
+            "workspace_id": "ws_main",
+            "agent": {
+              "ref": "org/research-agent",
+              "version": 4
+            },
+            "input": {
+              "query_template": "{{ graph.inputs.topic }}"
+            },
+            "next": "fan-out"
+          },
+          {
+            "id": "fan-out",
+            "type": "parallel",
+            "workspace_id": "ws_main",
+            "branches": [
+              {
+                "next": "summarize"
+              },
+              {
+                "next": "extract-entities"
+              }
+            ]
+          },
+          {
+            "id": "summarize",
+            "type": "tool",
+            "workspace_id": "ws_main",
+            "tool": {
+              "ref": "org/web_search",
+              "version": 2,
+              "config": {
+                "max_results": 5
+              }
+            },
+            "input_mapping": {
+              "query": "{{ nodes['research-a'].output.query }}"
+            },
+            "timeout_seconds": 30,
+            "retry": {
+              "max_attempts": 2,
+              "backoff": "exponential"
+            },
+            "next": "join"
+          },
+          {
+            "id": "extract-entities",
+            "type": "model_invoke",
+            "workspace_id": "ws_main",
+            "model_alias": "gpt-4.1-mini-cheap",
+            "prompt_template": "Extract entities from:\n{{ nodes['research-a'].output.query }}",
+            "output_schema_ref": "org/schemas/entities",
+            "next": "join"
+          },
+          {
+            "id": "join",
+            "type": "join",
+            "workspace_id": "ws_main",
+            "strategy": "all",
+            "timeout_seconds": 120
+          },
+          {
+            "id": "review-loop",
+            "type": "loop",
+            "workspace_id": "ws_main",
+            "body_start": "review-agent",
+            "max_iterations": 3,
+            "break_condition": "{\"==\": [{\"var\": \"nodes.review-agent.output.approved\"}, true]}"
+          },
+          {
+            "id": "review-agent",
+            "type": "agent",
+            "workspace_id": "ws_main",
+            "agent": {
+              "ref": "org/critic-agent",
+              "version": 2
+            },
+            "input": {
+              "draft": "{{ nodes.synthesis.output.brief }}"
+            },
+            "next": "condition-review"
+          },
+          {
+            "id": "condition-review",
+            "type": "condition",
+            "workspace_id": "ws_main",
+            "branches": [
+              {
+                "condition": "{\"==\": [{\"var\": \"nodes.review-agent.output.approved\"}, true]}",
+                "next": "approval"
+              },
+              {
+                "condition": "default",
+                "next": "review-loop"
+              }
+            ]
+          },
+          {
+            "id": "synthesis",
+            "type": "model_invoke",
+            "workspace_id": "ws_main",
+            "model_alias": "gpt-4.1",
+            "prompt_template": "Write a research brief on {{ graph.inputs.topic }} using findings:\n{{ nodes.summarize.output.results }}\nEntities:\n{{ nodes['extract-entities'].output.entities }}",
+            "max_tokens": 2000,
+            "next": "review-loop"
+          },
+          {
+            "id": "approval",
+            "type": "approval",
+            "workspace_id": "ws_main",
+            "policy": {
+              "approvers": [
+                "role:research-lead"
+              ],
+              "expire_seconds": 3600
+            },
+            "on_failure": "end-failed"
+          },
+          {
+            "id": "error-handler",
+            "type": "error_handler",
+            "workspace_id": "ws_main",
+            "strategy": {
+              "compensation": "org/compensations/cleanup-webhooks",
+              "notify": [
+                "ops-oncall"
+              ]
+            },
+            "next": "end-failed"
+          },
+          {
+            "id": "end",
+            "type": "end",
+            "workspace_id": "ws_main",
+            "outcome": "success",
+            "required_outputs": [
+              "$.nodes.synthesis.output.brief"
+            ]
+          },
+          {
+            "id": "end-failed",
+            "type": "end",
+            "workspace_id": "ws_main",
+            "outcome": "failure"
+          }
+        ],
+        "edges": [
+          {
+            "from": "start",
+            "to": "research-a"
+          },
+          {
+            "from": "research-a",
+            "to": "fan-out"
+          },
+          {
+            "from": "fan-out",
+            "to": "summarize"
+          },
+          {
+            "from": "fan-out",
+            "to": "extract-entities"
+          },
+          {
+            "from": "summarize",
+            "to": "join"
+          },
+          {
+            "from": "extract-entities",
+            "to": "join"
+          },
+          {
+            "from": "join",
+            "to": "synthesis"
+          },
+          {
+            "from": "synthesis",
+            "to": "review-loop"
+          },
+          {
+            "from": "review-loop",
+            "to": "review-agent"
+          },
+          {
+            "from": "review-agent",
+            "to": "condition-review"
+          },
+          {
+            "from": "condition-review",
+            "to": "approval",
+            "condition": "{\"==\": [{\"var\": \"nodes.review-agent.output.approved\"}, true]}"
+          },
+          {
+            "from": "condition-review",
+            "to": "review-loop",
+            "condition": "default"
+          },
+          {
+            "from": "synthesis",
+            "to": "error-handler",
+            "kind": "error"
+          },
+          {
+            "from": "approval",
+            "to": "end",
+            "kind": "approval_result"
+          },
+          {
+            "from": "approval",
+            "to": "end-failed",
+            "kind": "error"
+          },
+          {
+            "from": "error-handler",
+            "to": "end-failed"
+          }
+        ],
+        "budget": {
+          "limits": {
+            "run_usd_max": 2.0,
+            "run_tokens_max": 120000,
+            "run_seconds_max": 1800
+          }
+        },
+        "policies": {
+          "on_node_error": "halt",
+          "data_retention_days": 30
+        }
+      }
+    }
+  },
+  {
+    "id": "author_supplied_idempotent",
+    "mutation": "add registry-owned idempotent=true to summarize toolConfig",
+    "expected_error": "RESERVED",
+    "definition": {
+      "meta": {
+        "name": "research-brief",
+        "workspace_id": "ws_main",
+        "version": 3,
+        "description": "Search, draft, and review a research brief with human approval."
+      },
+      "graph": {
+        "nodes": [
+          {
+            "id": "start",
+            "type": "start",
+            "workspace_id": "ws_main",
+            "next": "research-a"
+          },
+          {
+            "id": "research-a",
+            "type": "agent",
+            "workspace_id": "ws_main",
+            "agent": {
+              "ref": "org/research-agent",
+              "version": 4
+            },
+            "input": {
+              "query_template": "{{ graph.inputs.topic }}"
+            },
+            "next": "fan-out"
+          },
+          {
+            "id": "fan-out",
+            "type": "parallel",
+            "workspace_id": "ws_main",
+            "branches": [
+              {
+                "next": "summarize"
+              },
+              {
+                "next": "extract-entities"
+              }
+            ]
+          },
+          {
+            "id": "summarize",
+            "type": "tool",
+            "workspace_id": "ws_main",
+            "tool": {
+              "ref": "org/web_search",
+              "version": 2,
+              "config": {
+                "max_results": 5,
+                "idempotent": true
+              }
+            },
+            "input_mapping": {
+              "query": "{{ nodes['research-a'].output.query }}"
+            },
+            "timeout_seconds": 30,
+            "retry": {
+              "max_attempts": 2,
+              "backoff": "exponential"
+            },
+            "next": "join"
+          },
+          {
+            "id": "extract-entities",
+            "type": "model_invoke",
+            "workspace_id": "ws_main",
+            "model_alias": "gpt-4.1-mini-cheap",
+            "prompt_template": "Extract entities from:\n{{ nodes['research-a'].output.query }}",
+            "output_schema_ref": "org/schemas/entities",
+            "next": "join"
+          },
+          {
+            "id": "join",
+            "type": "join",
+            "workspace_id": "ws_main",
+            "strategy": "all",
+            "timeout_seconds": 120
+          },
+          {
+            "id": "review-loop",
+            "type": "loop",
+            "workspace_id": "ws_main",
+            "body_start": "review-agent",
+            "max_iterations": 3,
+            "break_condition": "{\"==\": [{\"var\": \"nodes.review-agent.output.approved\"}, true]}",
+            "on_exhaustion": "fail"
+          },
+          {
+            "id": "review-agent",
+            "type": "agent",
+            "workspace_id": "ws_main",
+            "agent": {
+              "ref": "org/critic-agent",
+              "version": 2
+            },
+            "input": {
+              "draft": "{{ nodes.synthesis.output.brief }}"
+            },
+            "next": "condition-review"
+          },
+          {
+            "id": "condition-review",
+            "type": "condition",
+            "workspace_id": "ws_main",
+            "branches": [
+              {
+                "condition": "{\"==\": [{\"var\": \"nodes.review-agent.output.approved\"}, true]}",
+                "next": "approval"
+              },
+              {
+                "condition": "default",
+                "next": "review-loop"
+              }
+            ]
+          },
+          {
+            "id": "synthesis",
+            "type": "model_invoke",
+            "workspace_id": "ws_main",
+            "model_alias": "gpt-4.1",
+            "prompt_template": "Write a research brief on {{ graph.inputs.topic }} using findings:\n{{ nodes.summarize.output.results }}\nEntities:\n{{ nodes['extract-entities'].output.entities }}",
+            "max_tokens": 2000,
+            "next": "review-loop"
+          },
+          {
+            "id": "approval",
+            "type": "approval",
+            "workspace_id": "ws_main",
+            "policy": {
+              "approvers": [
+                "role:research-lead"
+              ],
+              "expire_seconds": 3600
+            },
+            "on_failure": "end-failed"
+          },
+          {
+            "id": "error-handler",
+            "type": "error_handler",
+            "workspace_id": "ws_main",
+            "strategy": {
+              "compensation": "org/compensations/cleanup-webhooks",
+              "notify": [
+                "ops-oncall"
+              ]
+            },
+            "next": "end-failed"
+          },
+          {
+            "id": "end",
+            "type": "end",
+            "workspace_id": "ws_main",
+            "outcome": "success",
+            "required_outputs": [
+              "$.nodes.synthesis.output.brief"
+            ]
+          },
+          {
+            "id": "end-failed",
+            "type": "end",
+            "workspace_id": "ws_main",
+            "outcome": "failure"
+          }
+        ],
+        "edges": [
+          {
+            "from": "start",
+            "to": "research-a"
+          },
+          {
+            "from": "research-a",
+            "to": "fan-out"
+          },
+          {
+            "from": "fan-out",
+            "to": "summarize"
+          },
+          {
+            "from": "fan-out",
+            "to": "extract-entities"
+          },
+          {
+            "from": "summarize",
+            "to": "join"
+          },
+          {
+            "from": "extract-entities",
+            "to": "join"
+          },
+          {
+            "from": "join",
+            "to": "synthesis"
+          },
+          {
+            "from": "synthesis",
+            "to": "review-loop"
+          },
+          {
+            "from": "review-loop",
+            "to": "review-agent"
+          },
+          {
+            "from": "review-agent",
+            "to": "condition-review"
+          },
+          {
+            "from": "condition-review",
+            "to": "approval",
+            "condition": "{\"==\": [{\"var\": \"nodes.review-agent.output.approved\"}, true]}"
+          },
+          {
+            "from": "condition-review",
+            "to": "review-loop",
+            "condition": "default"
+          },
+          {
+            "from": "synthesis",
+            "to": "error-handler",
+            "kind": "error"
+          },
+          {
+            "from": "approval",
+            "to": "end",
+            "kind": "approval_result"
+          },
+          {
+            "from": "approval",
+            "to": "end-failed",
+            "kind": "error"
+          },
+          {
+            "from": "error-handler",
+            "to": "end-failed"
+          }
+        ],
+        "budget": {
+          "limits": {
+            "run_usd_max": 2.0,
+            "run_tokens_max": 120000,
+            "run_seconds_max": 1800
+          }
+        },
+        "policies": {
+          "on_node_error": "halt",
+          "data_retention_days": 30
+        }
+      }
+    }
+  },
+  {
+    "id": "non_allowlisted_http",
+    "mutation": "point summarize at an allowlist-external host",
+    "expected_error": "ALLOWLIST",
+    "definition": {
+      "meta": {
+        "name": "research-brief",
+        "workspace_id": "ws_main",
+        "version": 3,
+        "description": "Search, draft, and review a research brief with human approval."
+      },
+      "graph": {
+        "nodes": [
+          {
+            "id": "start",
+            "type": "start",
+            "workspace_id": "ws_main",
+            "next": "research-a"
+          },
+          {
+            "id": "research-a",
+            "type": "agent",
+            "workspace_id": "ws_main",
+            "agent": {
+              "ref": "org/research-agent",
+              "version": 4
+            },
+            "input": {
+              "query_template": "{{ graph.inputs.topic }}"
+            },
+            "next": "fan-out"
+          },
+          {
+            "id": "fan-out",
+            "type": "parallel",
+            "workspace_id": "ws_main",
+            "branches": [
+              {
+                "next": "summarize"
+              },
+              {
+                "next": "extract-entities"
+              }
+            ]
+          },
+          {
+            "id": "summarize",
+            "type": "tool",
+            "workspace_id": "ws_main",
+            "tool": {
+              "ref": "org/http",
+              "version": 1,
+              "config": {
+                "url": "https://public.example.com/x"
+              }
+            },
+            "input_mapping": {
+              "query": "{{ nodes['research-a'].output.query }}"
+            },
+            "timeout_seconds": 30,
+            "retry": {
+              "max_attempts": 2,
+              "backoff": "exponential"
+            },
+            "next": "join"
+          },
+          {
+            "id": "extract-entities",
+            "type": "model_invoke",
+            "workspace_id": "ws_main",
+            "model_alias": "gpt-4.1-mini-cheap",
+            "prompt_template": "Extract entities from:\n{{ nodes['research-a'].output.query }}",
+            "output_schema_ref": "org/schemas/entities",
+            "next": "join"
+          },
+          {
+            "id": "join",
+            "type": "join",
+            "workspace_id": "ws_main",
+            "strategy": "all",
+            "timeout_seconds": 120
+          },
+          {
+            "id": "review-loop",
+            "type": "loop",
+            "workspace_id": "ws_main",
+            "body_start": "review-agent",
+            "max_iterations": 3,
+            "break_condition": "{\"==\": [{\"var\": \"nodes.review-agent.output.approved\"}, true]}",
+            "on_exhaustion": "fail"
+          },
+          {
+            "id": "review-agent",
+            "type": "agent",
+            "workspace_id": "ws_main",
+            "agent": {
+              "ref": "org/critic-agent",
+              "version": 2
+            },
+            "input": {
+              "draft": "{{ nodes.synthesis.output.brief }}"
+            },
+            "next": "condition-review"
+          },
+          {
+            "id": "condition-review",
+            "type": "condition",
+            "workspace_id": "ws_main",
+            "branches": [
+              {
+                "condition": "{\"==\": [{\"var\": \"nodes.review-agent.output.approved\"}, true]}",
+                "next": "approval"
+              },
+              {
+                "condition": "default",
+                "next": "review-loop"
+              }
+            ]
+          },
+          {
+            "id": "synthesis",
+            "type": "model_invoke",
+            "workspace_id": "ws_main",
+            "model_alias": "gpt-4.1",
+            "prompt_template": "Write a research brief on {{ graph.inputs.topic }} using findings:\n{{ nodes.summarize.output.results }}\nEntities:\n{{ nodes['extract-entities'].output.entities }}",
+            "max_tokens": 2000,
+            "next": "review-loop"
+          },
+          {
+            "id": "approval",
+            "type": "approval",
+            "workspace_id": "ws_main",
+            "policy": {
+              "approvers": [
+                "role:research-lead"
+              ],
+              "expire_seconds": 3600
+            },
+            "on_failure": "end-failed"
+          },
+          {
+            "id": "error-handler",
+            "type": "error_handler",
+            "workspace_id": "ws_main",
+            "strategy": {
+              "compensation": "org/compensations/cleanup-webhooks",
+              "notify": [
+                "ops-oncall"
+              ]
+            },
+            "next": "end-failed"
+          },
+          {
+            "id": "end",
+            "type": "end",
+            "workspace_id": "ws_main",
+            "outcome": "success",
+            "required_outputs": [
+              "$.nodes.synthesis.output.brief"
+            ]
+          },
+          {
+            "id": "end-failed",
+            "type": "end",
+            "workspace_id": "ws_main",
+            "outcome": "failure"
+          }
+        ],
+        "edges": [
+          {
+            "from": "start",
+            "to": "research-a"
+          },
+          {
+            "from": "research-a",
+            "to": "fan-out"
+          },
+          {
+            "from": "fan-out",
+            "to": "summarize"
+          },
+          {
+            "from": "fan-out",
+            "to": "extract-entities"
+          },
+          {
+            "from": "summarize",
+            "to": "join"
+          },
+          {
+            "from": "extract-entities",
+            "to": "join"
+          },
+          {
+            "from": "join",
+            "to": "synthesis"
+          },
+          {
+            "from": "synthesis",
+            "to": "review-loop"
+          },
+          {
+            "from": "review-loop",
+            "to": "review-agent"
+          },
+          {
+            "from": "review-agent",
+            "to": "condition-review"
+          },
+          {
+            "from": "condition-review",
+            "to": "approval",
+            "condition": "{\"==\": [{\"var\": \"nodes.review-agent.output.approved\"}, true]}"
+          },
+          {
+            "from": "condition-review",
+            "to": "review-loop",
+            "condition": "default"
+          },
+          {
+            "from": "synthesis",
+            "to": "error-handler",
+            "kind": "error"
+          },
+          {
+            "from": "approval",
+            "to": "end",
+            "kind": "approval_result"
+          },
+          {
+            "from": "approval",
+            "to": "end-failed",
+            "kind": "error"
+          },
+          {
+            "from": "error-handler",
+            "to": "end-failed"
+          }
+        ],
+        "budget": {
+          "limits": {
+            "run_usd_max": 2.0,
+            "run_tokens_max": 120000,
+            "run_seconds_max": 1800
+          }
+        },
+        "policies": {
+          "on_node_error": "halt",
+          "data_retention_days": 30
+        }
+      }
+    }
+  },
+  {
+    "id": "missing_workspace_id",
+    "mutation": "remove workspace_id from join",
+    "expected_error": "SCHEMA",
+    "definition": {
+      "meta": {
+        "name": "research-brief",
+        "workspace_id": "ws_main",
+        "version": 3,
+        "description": "Search, draft, and review a research brief with human approval."
+      },
+      "graph": {
+        "nodes": [
+          {
+            "id": "start",
+            "type": "start",
+            "workspace_id": "ws_main",
+            "next": "research-a"
+          },
+          {
+            "id": "research-a",
+            "type": "agent",
+            "workspace_id": "ws_main",
+            "agent": {
+              "ref": "org/research-agent",
+              "version": 4
+            },
+            "input": {
+              "query_template": "{{ graph.inputs.topic }}"
+            },
+            "next": "fan-out"
+          },
+          {
+            "id": "fan-out",
+            "type": "parallel",
+            "workspace_id": "ws_main",
+            "branches": [
+              {
+                "next": "summarize"
+              },
+              {
+                "next": "extract-entities"
+              }
+            ]
+          },
+          {
+            "id": "summarize",
+            "type": "tool",
+            "workspace_id": "ws_main",
+            "tool": {
+              "ref": "org/web_search",
+              "version": 2,
+              "config": {
+                "max_results": 5
+              }
+            },
+            "input_mapping": {
+              "query": "{{ nodes['research-a'].output.query }}"
+            },
+            "timeout_seconds": 30,
+            "retry": {
+              "max_attempts": 2,
+              "backoff": "exponential"
+            },
+            "next": "join"
+          },
+          {
+            "id": "extract-entities",
+            "type": "model_invoke",
+            "workspace_id": "ws_main",
+            "model_alias": "gpt-4.1-mini-cheap",
+            "prompt_template": "Extract entities from:\n{{ nodes['research-a'].output.query }}",
+            "output_schema_ref": "org/schemas/entities",
+            "next": "join"
+          },
+          {
+            "id": "join",
+            "type": "join",
+            "strategy": "all",
+            "timeout_seconds": 120
+          },
+          {
+            "id": "review-loop",
+            "type": "loop",
+            "workspace_id": "ws_main",
+            "body_start": "review-agent",
+            "max_iterations": 3,
+            "break_condition": "{\"==\": [{\"var\": \"nodes.review-agent.output.approved\"}, true]}",
+            "on_exhaustion": "fail"
+          },
+          {
+            "id": "review-agent",
+            "type": "agent",
+            "workspace_id": "ws_main",
+            "agent": {
+              "ref": "org/critic-agent",
+              "version": 2
+            },
+            "input": {
+              "draft": "{{ nodes.synthesis.output.brief }}"
+            },
+            "next": "condition-review"
+          },
+          {
+            "id": "condition-review",
+            "type": "condition",
+            "workspace_id": "ws_main",
+            "branches": [
+              {
+                "condition": "{\"==\": [{\"var\": \"nodes.review-agent.output.approved\"}, true]}",
+                "next": "approval"
+              },
+              {
+                "condition": "default",
+                "next": "review-loop"
+              }
+            ]
+          },
+          {
+            "id": "synthesis",
+            "type": "model_invoke",
+            "workspace_id": "ws_main",
+            "model_alias": "gpt-4.1",
+            "prompt_template": "Write a research brief on {{ graph.inputs.topic }} using findings:\n{{ nodes.summarize.output.results }}\nEntities:\n{{ nodes['extract-entities'].output.entities }}",
+            "max_tokens": 2000,
+            "next": "review-loop"
+          },
+          {
+            "id": "approval",
+            "type": "approval",
+            "workspace_id": "ws_main",
+            "policy": {
+              "approvers": [
+                "role:research-lead"
+              ],
+              "expire_seconds": 3600
+            },
+            "on_failure": "end-failed"
+          },
+          {
+            "id": "error-handler",
+            "type": "error_handler",
+            "workspace_id": "ws_main",
+            "strategy": {
+              "compensation": "org/compensations/cleanup-webhooks",
+              "notify": [
+                "ops-oncall"
+              ]
+            },
+            "next": "end-failed"
+          },
+          {
+            "id": "end",
+            "type": "end",
+            "workspace_id": "ws_main",
+            "outcome": "success",
+            "required_outputs": [
+              "$.nodes.synthesis.output.brief"
+            ]
+          },
+          {
+            "id": "end-failed",
+            "type": "end",
+            "workspace_id": "ws_main",
+            "outcome": "failure"
+          }
+        ],
+        "edges": [
+          {
+            "from": "start",
+            "to": "research-a"
+          },
+          {
+            "from": "research-a",
+            "to": "fan-out"
+          },
+          {
+            "from": "fan-out",
+            "to": "summarize"
+          },
+          {
+            "from": "fan-out",
+            "to": "extract-entities"
+          },
+          {
+            "from": "summarize",
+            "to": "join"
+          },
+          {
+            "from": "extract-entities",
+            "to": "join"
+          },
+          {
+            "from": "join",
+            "to": "synthesis"
+          },
+          {
+            "from": "synthesis",
+            "to": "review-loop"
+          },
+          {
+            "from": "review-loop",
+            "to": "review-agent"
+          },
+          {
+            "from": "review-agent",
+            "to": "condition-review"
+          },
+          {
+            "from": "condition-review",
+            "to": "approval",
+            "condition": "{\"==\": [{\"var\": \"nodes.review-agent.output.approved\"}, true]}"
+          },
+          {
+            "from": "condition-review",
+            "to": "review-loop",
+            "condition": "default"
+          },
+          {
+            "from": "synthesis",
+            "to": "error-handler",
+            "kind": "error"
+          },
+          {
+            "from": "approval",
+            "to": "end",
+            "kind": "approval_result"
+          },
+          {
+            "from": "approval",
+            "to": "end-failed",
+            "kind": "error"
+          },
+          {
+            "from": "error-handler",
+            "to": "end-failed"
+          }
+        ],
+        "budget": {
+          "limits": {
+            "run_usd_max": 2.0,
+            "run_tokens_max": 120000,
+            "run_seconds_max": 1800
+          }
+        },
+        "policies": {
+          "on_node_error": "halt",
+          "data_retention_days": 30
+        }
+      }
+    }
+  },
+  {
+    "id": "cycle_bypassing_loop_controller",
+    "mutation": "add self-loop on review-agent (cycle that bypasses the bounded loop controller)",
+    "expected_error": "UNBOUNDED",
+    "definition": {
+      "meta": {
+        "name": "research-brief",
+        "workspace_id": "ws_main",
+        "version": 3,
+        "description": "Search, draft, and review a research brief with human approval."
+      },
+      "graph": {
+        "nodes": [
+          {
+            "id": "start",
+            "type": "start",
+            "workspace_id": "ws_main",
+            "next": "research-a"
+          },
+          {
+            "id": "research-a",
+            "type": "agent",
+            "workspace_id": "ws_main",
+            "agent": {
+              "ref": "org/research-agent",
+              "version": 4
+            },
+            "input": {
+              "query_template": "{{ graph.inputs.topic }}"
+            },
+            "next": "fan-out"
+          },
+          {
+            "id": "fan-out",
+            "type": "parallel",
+            "workspace_id": "ws_main",
+            "branches": [
+              {
+                "next": "summarize"
+              },
+              {
+                "next": "extract-entities"
+              }
+            ]
+          },
+          {
+            "id": "summarize",
+            "type": "tool",
+            "workspace_id": "ws_main",
+            "tool": {
+              "ref": "org/web_search",
+              "version": 2,
+              "config": {
+                "max_results": 5
+              }
+            },
+            "input_mapping": {
+              "query": "{{ nodes['research-a'].output.query }}"
+            },
+            "timeout_seconds": 30,
+            "retry": {
+              "max_attempts": 2,
+              "backoff": "exponential"
+            },
+            "next": "join"
+          },
+          {
+            "id": "extract-entities",
+            "type": "model_invoke",
+            "workspace_id": "ws_main",
+            "model_alias": "gpt-4.1-mini-cheap",
+            "prompt_template": "Extract entities from:\n{{ nodes['research-a'].output.query }}",
+            "output_schema_ref": "org/schemas/entities",
+            "next": "join"
+          },
+          {
+            "id": "join",
+            "type": "join",
+            "workspace_id": "ws_main",
+            "strategy": "all",
+            "timeout_seconds": 120
+          },
+          {
+            "id": "review-loop",
+            "type": "loop",
+            "workspace_id": "ws_main",
+            "body_start": "review-agent",
+            "max_iterations": 3,
+            "break_condition": "{\"==\": [{\"var\": \"nodes.review-agent.output.approved\"}, true]}",
+            "on_exhaustion": "fail"
+          },
+          {
+            "id": "review-agent",
+            "type": "agent",
+            "workspace_id": "ws_main",
+            "agent": {
+              "ref": "org/critic-agent",
+              "version": 2
+            },
+            "input": {
+              "draft": "{{ nodes.synthesis.output.brief }}"
+            },
+            "next": "condition-review"
+          },
+          {
+            "id": "condition-review",
+            "type": "condition",
+            "workspace_id": "ws_main",
+            "branches": [
+              {
+                "condition": "{\"==\": [{\"var\": \"nodes.review-agent.output.approved\"}, true]}",
+                "next": "approval"
+              },
+              {
+                "condition": "default",
+                "next": "review-loop"
+              }
+            ]
+          },
+          {
+            "id": "synthesis",
+            "type": "model_invoke",
+            "workspace_id": "ws_main",
+            "model_alias": "gpt-4.1",
+            "prompt_template": "Write a research brief on {{ graph.inputs.topic }} using findings:\n{{ nodes.summarize.output.results }}\nEntities:\n{{ nodes['extract-entities'].output.entities }}",
+            "max_tokens": 2000,
+            "next": "review-loop"
+          },
+          {
+            "id": "approval",
+            "type": "approval",
+            "workspace_id": "ws_main",
+            "policy": {
+              "approvers": [
+                "role:research-lead"
+              ],
+              "expire_seconds": 3600
+            },
+            "on_failure": "end-failed"
+          },
+          {
+            "id": "error-handler",
+            "type": "error_handler",
+            "workspace_id": "ws_main",
+            "strategy": {
+              "compensation": "org/compensations/cleanup-webhooks",
+              "notify": [
+                "ops-oncall"
+              ]
+            },
+            "next": "end-failed"
+          },
+          {
+            "id": "end",
+            "type": "end",
+            "workspace_id": "ws_main",
+            "outcome": "success",
+            "required_outputs": [
+              "$.nodes.synthesis.output.brief"
+            ]
+          },
+          {
+            "id": "end-failed",
+            "type": "end",
+            "workspace_id": "ws_main",
+            "outcome": "failure"
+          }
+        ],
+        "edges": [
+          {
+            "from": "start",
+            "to": "research-a"
+          },
+          {
+            "from": "research-a",
+            "to": "fan-out"
+          },
+          {
+            "from": "fan-out",
+            "to": "summarize"
+          },
+          {
+            "from": "fan-out",
+            "to": "extract-entities"
+          },
+          {
+            "from": "summarize",
+            "to": "join"
+          },
+          {
+            "from": "extract-entities",
+            "to": "join"
+          },
+          {
+            "from": "join",
+            "to": "synthesis"
+          },
+          {
+            "from": "synthesis",
+            "to": "review-loop"
+          },
+          {
+            "from": "review-loop",
+            "to": "review-agent"
+          },
+          {
+            "from": "review-agent",
+            "to": "condition-review"
+          },
+          {
+            "from": "condition-review",
+            "to": "approval",
+            "condition": "{\"==\": [{\"var\": \"nodes.review-agent.output.approved\"}, true]}"
+          },
+          {
+            "from": "condition-review",
+            "to": "review-loop",
+            "condition": "default"
+          },
+          {
+            "from": "synthesis",
+            "to": "error-handler",
+            "kind": "error"
+          },
+          {
+            "from": "approval",
+            "to": "end",
+            "kind": "approval_result"
+          },
+          {
+            "from": "approval",
+            "to": "end-failed",
+            "kind": "error"
+          },
+          {
+            "from": "error-handler",
+            "to": "end-failed"
+          },
+          {
+            "from": "review-agent",
+            "to": "review-agent",
+            "condition": "default"
+          }
+        ],
+        "budget": {
+          "limits": {
+            "run_usd_max": 2.0,
+            "run_tokens_max": 120000,
+            "run_seconds_max": 1800
+          }
+        },
+        "policies": {
+          "on_node_error": "halt",
+          "data_retention_days": 30
+        }
+      }
+    }
+  }
+]

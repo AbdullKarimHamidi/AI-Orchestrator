@@ -1,0 +1,1189 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/workflow-definition.json",
+  "title": "WorkflowDefinition",
+  "type": "object",
+  "required": [
+    "meta",
+    "graph"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "meta": {
+      "type": "object",
+      "required": [
+        "name",
+        "workspace_id",
+        "version"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "workspace_id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "graph": {
+      "type": "object",
+      "required": [
+        "nodes",
+        "edges",
+        "budget",
+        "policies"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/NodeStart"
+              },
+              {
+                "$ref": "#/$defs/NodeEnd"
+              },
+              {
+                "$ref": "#/$defs/NodeAgent"
+              },
+              {
+                "$ref": "#/$defs/NodeModelInvoke"
+              },
+              {
+                "$ref": "#/$defs/NodeTool"
+              },
+              {
+                "$ref": "#/$defs/NodeCondition"
+              },
+              {
+                "$ref": "#/$defs/NodeParallel"
+              },
+              {
+                "$ref": "#/$defs/NodeJoin"
+              },
+              {
+                "$ref": "#/$defs/NodeLoop"
+              },
+              {
+                "$ref": "#/$defs/NodeTransform"
+              },
+              {
+                "$ref": "#/$defs/NodeApproval"
+              },
+              {
+                "$ref": "#/$defs/NodeDelay"
+              },
+              {
+                "$ref": "#/$defs/NodeTriggerSchedule"
+              },
+              {
+                "$ref": "#/$defs/NodeTriggerEvent"
+              },
+              {
+                "$ref": "#/$defs/NodeSubWorkflow"
+              },
+              {
+                "$ref": "#/$defs/NodeErrorHandler"
+              },
+              {
+                "$ref": "#/$defs/NodeHumanInput"
+              }
+            ]
+          }
+        },
+        "edges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "from",
+              "to"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "from": {
+                "type": "string"
+              },
+              "to": {
+                "type": "string"
+              },
+              "condition": {
+                "type": "string",
+                "description": "JSON-Logic expression over graph state, serialized as a JSON string; absent or the literal 'default' = unconditional"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "normal",
+                  "error",
+                  "approval_result"
+                ],
+                "default": "normal"
+              }
+            }
+          }
+        },
+        "budget": {
+          "type": "object",
+          "required": [
+            "limits"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "limits": {
+              "type": "object",
+              "required": [
+                "run_usd_max",
+                "run_tokens_max",
+                "run_seconds_max"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "run_usd_max": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "run_tokens_max": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "run_seconds_max": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          }
+        },
+        "policies": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "on_node_error": {
+              "type": "string",
+              "enum": [
+                "halt",
+                "continue"
+              ],
+              "default": "halt"
+            },
+            "approval": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "data_retention_days": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 30
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "NodeStart": {
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "workspace_id",
+        "next"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Node id, unique in the graph (kebab-case)"
+        },
+        "title": {
+          "type": "string"
+        },
+        "workspace_id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "start"
+        },
+        "next": {
+          "type": "string"
+        }
+      }
+    },
+    "NodeEnd": {
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "workspace_id"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Node id, unique in the graph (kebab-case)"
+        },
+        "title": {
+          "type": "string"
+        },
+        "workspace_id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "end"
+        },
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "success",
+            "failure"
+          ],
+          "default": "success",
+          "description": "Terminal outcome. required_outputs are asserted only on success terminals; failure terminals are exempt and end the run as failed."
+        },
+        "required_outputs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "JSON-Path references into graph state; validated on success terminals only."
+        }
+      }
+    },
+    "NodeAgent": {
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "workspace_id",
+        "agent",
+        "next"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Node id, unique in the graph (kebab-case)"
+        },
+        "title": {
+          "type": "string"
+        },
+        "workspace_id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "agent"
+        },
+        "agent": {
+          "type": "object",
+          "required": [
+            "ref",
+            "version"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "ref": {
+              "type": "string"
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "input": {
+          "type": "object",
+          "description": "Static inputs"
+        },
+        "next": {
+          "type": "string"
+        }
+      }
+    },
+    "NodeModelInvoke": {
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "workspace_id",
+        "model_alias",
+        "prompt_template",
+        "next"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Node id, unique in the graph (kebab-case)"
+        },
+        "title": {
+          "type": "string"
+        },
+        "workspace_id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "model_invoke"
+        },
+        "model_alias": {
+          "type": "string"
+        },
+        "prompt_template": {
+          "type": "string",
+          "description": "Sandboxed Jinja template"
+        },
+        "output_schema_ref": {
+          "type": "string"
+        },
+        "max_tokens": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "next": {
+          "type": "string"
+        }
+      }
+    },
+    "NodeTool": {
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "workspace_id",
+        "tool",
+        "next"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Node id, unique in the graph (kebab-case)"
+        },
+        "title": {
+          "type": "string"
+        },
+        "workspace_id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "tool"
+        },
+        "tool": {
+          "type": "object",
+          "required": [
+            "ref",
+            "version"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "ref": {
+              "type": "string",
+              "description": "tool ref, e.g. org/web_search"
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "config": {
+              "type": "object",
+              "description": "Per-call config validated against the tool's config schema"
+            }
+          }
+        },
+        "input_mapping": {
+          "type": "object"
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "retry": {
+          "type": "object",
+          "required": [
+            "max_attempts",
+            "backoff"
+          ],
+          "additionalProperties": false,
+          "description": "Auto-retries permitted only when the registry marks the tool idempotent.",
+          "properties": {
+            "max_attempts": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 5
+            },
+            "backoff": {
+              "type": "string",
+              "enum": [
+                "fixed",
+                "exponential"
+              ]
+            },
+            "idempotency_key_expr": {
+              "type": "string",
+              "description": "Optional: expression producing a dedupe key when pre-call state allows"
+            }
+          }
+        },
+        "next": {
+          "type": "string"
+        }
+      }
+    },
+    "NodeCondition": {
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "workspace_id",
+        "branches"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Node id, unique in the graph (kebab-case)"
+        },
+        "title": {
+          "type": "string"
+        },
+        "workspace_id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "condition"
+        },
+        "branches": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "condition",
+              "next"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "condition": {
+                "type": "string",
+                "description": "JSON-Logic expression over graph state, serialized as a JSON string; 'default' = fallback branch"
+              },
+              "next": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "NodeParallel": {
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "workspace_id",
+        "branches"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Node id, unique in the graph (kebab-case)"
+        },
+        "title": {
+          "type": "string"
+        },
+        "workspace_id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "parallel"
+        },
+        "branches": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "object",
+            "required": [
+              "next"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "next": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "NodeJoin": {
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "workspace_id"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Node id, unique in the graph (kebab-case)"
+        },
+        "title": {
+          "type": "string"
+        },
+        "workspace_id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "join"
+        },
+        "strategy": {
+          "type": "string",
+          "enum": [
+            "all",
+            "first",
+            "quorum"
+          ],
+          "default": "all"
+        },
+        "quorum": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "NodeLoop": {
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "workspace_id",
+        "body_start",
+        "max_iterations",
+        "on_exhaustion"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Node id, unique in the graph (kebab-case)"
+        },
+        "title": {
+          "type": "string"
+        },
+        "workspace_id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "loop"
+        },
+        "body_start": {
+          "type": "string"
+        },
+        "break_condition": {
+          "type": "string",
+          "description": "JSON-Logic expression over graph state, serialized as a JSON string; evaluated after each iteration"
+        },
+        "max_iterations": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "on_exhaustion": {
+          "type": "string",
+          "enum": [
+            "fail",
+            "proceed"
+          ],
+          "default": "fail",
+          "description": "Policy when iterations are exhausted without the break condition. fail (default) terminates the run as failed via a failure terminal; proceed requires explicit opt-in."
+        },
+        "iterate_over": {
+          "type": "string"
+        }
+      }
+    },
+    "NodeTransform": {
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "workspace_id",
+        "expression",
+        "next"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Node id, unique in the graph (kebab-case)"
+        },
+        "title": {
+          "type": "string"
+        },
+        "workspace_id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "transform"
+        },
+        "expression": {
+          "type": "string"
+        },
+        "next": {
+          "type": "string"
+        }
+      }
+    },
+    "NodeApproval": {
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "workspace_id",
+        "policy",
+        "on_failure"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Node id, unique in the graph (kebab-case)"
+        },
+        "title": {
+          "type": "string"
+        },
+        "workspace_id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "approval"
+        },
+        "policy": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "on_failure": {
+          "type": "string",
+          "description": "Edge to follow on expiry/rejection; must terminate at a failure-outcome end node."
+        }
+      }
+    },
+    "NodeDelay": {
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "workspace_id",
+        "duration",
+        "next"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Node id, unique in the graph (kebab-case)"
+        },
+        "title": {
+          "type": "string"
+        },
+        "workspace_id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "delay"
+        },
+        "duration": {
+          "type": "string"
+        },
+        "next": {
+          "type": "string"
+        }
+      }
+    },
+    "NodeTriggerSchedule": {
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "workspace_id",
+        "cron",
+        "next"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Node id, unique in the graph (kebab-case)"
+        },
+        "title": {
+          "type": "string"
+        },
+        "workspace_id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "trigger_schedule"
+        },
+        "cron": {
+          "type": "string"
+        },
+        "next": {
+          "type": "string"
+        }
+      }
+    },
+    "NodeTriggerEvent": {
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "workspace_id",
+        "event_type",
+        "filter",
+        "next"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Node id, unique in the graph (kebab-case)"
+        },
+        "title": {
+          "type": "string"
+        },
+        "workspace_id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "trigger_event"
+        },
+        "event_type": {
+          "type": "string"
+        },
+        "filter": {
+          "type": "object"
+        },
+        "next": {
+          "type": "string"
+        }
+      }
+    },
+    "NodeSubWorkflow": {
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "workspace_id",
+        "workflow",
+        "next"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Node id, unique in the graph (kebab-case)"
+        },
+        "title": {
+          "type": "string"
+        },
+        "workspace_id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "subworkflow"
+        },
+        "workflow": {
+          "type": "object",
+          "required": [
+            "ref",
+            "version"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "ref": {
+              "type": "string"
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "inputs": {
+          "type": "object"
+        },
+        "next": {
+          "type": "string"
+        }
+      }
+    },
+    "NodeErrorHandler": {
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "workspace_id",
+        "strategy"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Node id, unique in the graph (kebab-case)"
+        },
+        "title": {
+          "type": "string"
+        },
+        "workspace_id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "error_handler"
+        },
+        "strategy": {
+          "type": "object",
+          "required": [
+            "compensation"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "compensation": {
+              "type": "string",
+              "description": "Named compensation strategy from the registry"
+            },
+            "notify": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "retry_policy": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          }
+        },
+        "next": {
+          "type": "string",
+          "description": "Must reference a failure-outcome end node."
+        }
+      }
+    },
+    "NodeHumanInput": {
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "workspace_id",
+        "prompt",
+        "timeout_seconds",
+        "on_timeout"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Node id, unique in the graph (kebab-case)"
+        },
+        "title": {
+          "type": "string"
+        },
+        "workspace_id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "human_input"
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "schema_ref": {
+          "type": "string"
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "on_timeout": {
+          "type": "string",
+          "enum": [
+            "fail",
+            "use_default"
+          ],
+          "default": "fail"
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "meta": {
+        "name": "research-brief",
+        "workspace_id": "ws_main",
+        "version": 3,
+        "description": "Search, draft, and review a research brief with human approval."
+      },
+      "graph": {
+        "nodes": [
+          {
+            "id": "start",
+            "type": "start",
+            "workspace_id": "ws_main",
+            "next": "research-a"
+          },
+          {
+            "id": "research-a",
+            "type": "agent",
+            "workspace_id": "ws_main",
+            "agent": {
+              "ref": "org/research-agent",
+              "version": 4
+            },
+            "input": {
+              "query_template": "{{ graph.inputs.topic }}"
+            },
+            "next": "fan-out"
+          },
+          {
+            "id": "fan-out",
+            "type": "parallel",
+            "workspace_id": "ws_main",
+            "branches": [
+              {
+                "next": "summarize"
+              },
+              {
+                "next": "extract-entities"
+              }
+            ]
+          },
+          {
+            "id": "summarize",
+            "type": "tool",
+            "workspace_id": "ws_main",
+            "tool": {
+              "ref": "org/web_search",
+              "version": 2,
+              "config": {
+                "max_results": 5
+              }
+            },
+            "input_mapping": {
+              "query": "{{ nodes['research-a'].output.query }}"
+            },
+            "timeout_seconds": 30,
+            "retry": {
+              "max_attempts": 2,
+              "backoff": "exponential"
+            },
+            "next": "join"
+          },
+          {
+            "id": "extract-entities",
+            "type": "model_invoke",
+            "workspace_id": "ws_main",
+            "model_alias": "gpt-4.1-mini-cheap",
+            "prompt_template": "Extract entities from:\n{{ nodes['research-a'].output.query }}",
+            "output_schema_ref": "org/schemas/entities",
+            "next": "join"
+          },
+          {
+            "id": "join",
+            "type": "join",
+            "workspace_id": "ws_main",
+            "strategy": "all",
+            "timeout_seconds": 120
+          },
+          {
+            "id": "review-loop",
+            "type": "loop",
+            "workspace_id": "ws_main",
+            "body_start": "review-agent",
+            "max_iterations": 3,
+            "break_condition": "{\"==\": [{\"var\": \"nodes.review-agent.output.approved\"}, true]}",
+            "on_exhaustion": "fail"
+          },
+          {
+            "id": "review-agent",
+            "type": "agent",
+            "workspace_id": "ws_main",
+            "agent": {
+              "ref": "org/critic-agent",
+              "version": 2
+            },
+            "input": {
+              "draft": "{{ nodes.synthesis.output.brief }}"
+            },
+            "next": "condition-review"
+          },
+          {
+            "id": "condition-review",
+            "type": "condition",
+            "workspace_id": "ws_main",
+            "branches": [
+              {
+                "condition": "{\"==\": [{\"var\": \"nodes.review-agent.output.approved\"}, true]}",
+                "next": "approval"
+              },
+              {
+                "condition": "default",
+                "next": "review-loop"
+              }
+            ]
+          },
+          {
+            "id": "synthesis",
+            "type": "model_invoke",
+            "workspace_id": "ws_main",
+            "model_alias": "gpt-4.1",
+            "prompt_template": "Write a research brief on {{ graph.inputs.topic }} using findings:\n{{ nodes.summarize.output.results }}\nEntities:\n{{ nodes['extract-entities'].output.entities }}",
+            "max_tokens": 2000,
+            "next": "review-loop"
+          },
+          {
+            "id": "approval",
+            "type": "approval",
+            "workspace_id": "ws_main",
+            "policy": {
+              "approvers": [
+                "role:research-lead"
+              ],
+              "expire_seconds": 3600
+            },
+            "on_failure": "end-failed"
+          },
+          {
+            "id": "error-handler",
+            "type": "error_handler",
+            "workspace_id": "ws_main",
+            "strategy": {
+              "compensation": "org/compensations/cleanup-webhooks",
+              "notify": [
+                "ops-oncall"
+              ]
+            },
+            "next": "end-failed"
+          },
+          {
+            "id": "end",
+            "type": "end",
+            "workspace_id": "ws_main",
+            "outcome": "success",
+            "required_outputs": [
+              "$.nodes.synthesis.output.brief"
+            ]
+          },
+          {
+            "id": "end-failed",
+            "type": "end",
+            "workspace_id": "ws_main",
+            "outcome": "failure"
+          }
+        ],
+        "edges": [
+          {
+            "from": "start",
+            "to": "research-a"
+          },
+          {
+            "from": "research-a",
+            "to": "fan-out"
+          },
+          {
+            "from": "fan-out",
+            "to": "summarize"
+          },
+          {
+            "from": "fan-out",
+            "to": "extract-entities"
+          },
+          {
+            "from": "summarize",
+            "to": "join"
+          },
+          {
+            "from": "extract-entities",
+            "to": "join"
+          },
+          {
+            "from": "join",
+            "to": "synthesis"
+          },
+          {
+            "from": "synthesis",
+            "to": "review-loop"
+          },
+          {
+            "from": "review-loop",
+            "to": "review-agent"
+          },
+          {
+            "from": "review-agent",
+            "to": "condition-review"
+          },
+          {
+            "from": "condition-review",
+            "to": "approval",
+            "condition": "{\"==\": [{\"var\": \"nodes.review-agent.output.approved\"}, true]}"
+          },
+          {
+            "from": "condition-review",
+            "to": "review-loop",
+            "condition": "default"
+          },
+          {
+            "from": "synthesis",
+            "to": "error-handler",
+            "kind": "error"
+          },
+          {
+            "from": "approval",
+            "to": "end",
+            "kind": "approval_result"
+          },
+          {
+            "from": "approval",
+            "to": "end-failed",
+            "kind": "error"
+          },
+          {
+            "from": "error-handler",
+            "to": "end-failed"
+          }
+        ],
+        "budget": {
+          "limits": {
+            "run_usd_max": 2.0,
+            "run_tokens_max": 120000,
+            "run_seconds_max": 1800
+          }
+        },
+        "policies": {
+          "on_node_error": "halt",
+          "data_retention_days": 30
+        }
+      }
+    }
+  ]
+}

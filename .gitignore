@@ -1,0 +1,27 @@
+# secrets
+
+
+# python
+__pycache__/
+*.py[cod]
+
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# node / next
+node_modules/
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+playwright-report/
+test-results/
+coverage/
+
+# os / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+backups/
