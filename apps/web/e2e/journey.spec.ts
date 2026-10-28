@@ -2,8 +2,7 @@ import { expect, test } from "@playwright/test"
 
 /**
  * The 10-step journey from the engineering brief, executed against the real stack in demo mode
- * (no paid provider needed). Steps 6–7 depend on the workflow engine, which is not implemented
- * yet; they are reported as skipped rather than faked.
+ * (no paid provider needed). Steps 6–7 build a workflow around the published agent and run it.
  */
 test("enterprise journey (demo mode)", async ({ page }) => {
   const email = `e2e-${Date.now()}@example.com`
