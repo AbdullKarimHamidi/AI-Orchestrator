@@ -1,0 +1,228 @@
+{
+  "shots": [
+    {
+      "name": "dashboard",
+      "path": "/dashboard",
+      "file": "/home/user/AI-Orchestrator/docs/screenshots/01-dashboard.png"
+    },
+    {
+      "name": "agents",
+      "path": "/agents",
+      "file": "/home/user/AI-Orchestrator/docs/screenshots/02-agents.png"
+    },
+    {
+      "name": "agent-new",
+      "path": "/agents/new",
+      "file": "/home/user/AI-Orchestrator/docs/screenshots/03-agent-new.png"
+    },
+    {
+      "name": "agent-detail",
+      "path": "/agents/agt_01M61XKCE4PZQSNWB1043XDP6S",
+      "file": "/home/user/AI-Orchestrator/docs/screenshots/04-agent-detail.png"
+    },
+    {
+      "name": "agent-edit",
+      "path": "/agents/agt_01M61XKCE4PZQSNWB1043XDP6S/edit",
+      "file": "/home/user/AI-Orchestrator/docs/screenshots/05-agent-edit.png"
+    },
+    {
+      "name": "agent-test",
+      "path": "/agents/agt_01M61XKCE4PZQSNWB1043XDP6S/test",
+      "file": "/home/user/AI-Orchestrator/docs/screenshots/06-agent-test.png"
+    },
+    {
+      "name": "agent-versions",
+      "path": "/agents/agt_01M61XKCE4PZQSNWB1043XDP6S/versions",
+      "file": "/home/user/AI-Orchestrator/docs/screenshots/07-agent-versions.png"
+    },
+    {
+      "name": "workflows",
+      "path": "/workflows",
+      "file": "/home/user/AI-Orchestrator/docs/screenshots/08-workflows.png"
+    },
+    {
+      "name": "workflow-new",
+      "path": "/workflows/new",
+      "file": "/home/user/AI-Orchestrator/docs/screenshots/09-workflow-new.png"
+    },
+    {
+      "name": "workflow-detail",
+      "path": "/workflows/wfl_01M61XKCQM4BCG40F2R4CTFDE1",
+      "file": "/home/user/AI-Orchestrator/docs/screenshots/10-workflow-detail.png"
+    },
+    {
+      "name": "workflow-edit",
+      "path": "/workflows/wfl_01M61XKCQM4BCG40F2R4CTFDE1/edit",
+      "file": "/home/user/AI-Orchestrator/docs/screenshots/11-workflow-edit.png"
+    },
+    {
+      "name": "workflow-runs",
+      "path": "/workflows/wfl_01M61XKCQM4BCG40F2R4CTFDE1/runs",
+      "file": "/home/user/AI-Orchestrator/docs/screenshots/12-workflow-runs.png"
+    },
+    {
+      "name": "tools",
+      "path": "/tools",
+      "file": "/home/user/AI-Orchestrator/docs/screenshots/13-tools.png"
+    },
+    {
+      "name": "tool-new",
+      "path": "/tools/new",
+      "file": "/home/user/AI-Orchestrator/docs/screenshots/14-tool-new.png"
+    },
+    {
+      "name": "tool-detail",
+      "path": "/tools/tol_01M61XKCBKXV0SD7F2C829CW2X",
+      "file": "/home/user/AI-Orchestrator/docs/screenshots/15-tool-detail.png"
+    },
+    {
+      "name": "integrations",
+      "path": "/integrations",
+      "file": "/home/user/AI-Orchestrator/docs/screenshots/16-integrations.png"
+    },
+    {
+      "name": "integrations-mcp",
+      "path": "/integrations/mcp",
+      "file": "/home/user/AI-Orchestrator/docs/screenshots/17-integrations-mcp.png"
+    },
+    {
+      "name": "knowledge",
+      "path": "/knowledge",
+      "file": "/home/user/AI-Orchestrator/docs/screenshots/18-knowledge.png"
+    },
+    {
+      "name": "knowledge-bases",
+      "path": "/knowledge/bases",
+      "file": "/home/user/AI-Orchestrator/docs/screenshots/19-knowledge-bases.png"
+    },
+    {
+      "name": "knowledge-base-detail",
+      "path": "/knowledge/bases/kb_01M61XKC34FM5NQXQ3QBTXE8X4",
+      "file": "/home/user/AI-Orchestrator/docs/screenshots/20-knowledge-base-detail.png"
+    },
+    {
+      "name": "knowledge-documents",
+      "path": "/knowledge/documents",
+      "file": "/home/user/AI-Orchestrator/docs/screenshots/21-knowledge-documents.png"
+    },
+    {
+      "name": "memory",
+      "path": "/memory",
+      "file": "/home/user/AI-Orchestrator/docs/screenshots/22-memory.png"
+    },
+    {
+      "name": "runs",
+      "path": "/runs",
+      "file": "/home/user/AI-Orchestrator/docs/screenshots/23-runs.png"
+    },
+    {
+      "name": "run-detail-agent",
+      "path": "/runs/run_01M61XKCRVAWPJ5CYDCC7EAJ5A",
+      "file": "/home/user/AI-Orchestrator/docs/screenshots/24-run-detail-agent.png"
+    },
+    {
+      "name": "run-detail-workflow",
+      "path": "/runs/run_01M61XKCX7WDNVR104SQ7ZBHE2",
+      "file": "/home/user/AI-Orchestrator/docs/screenshots/25-run-detail-workflow.png"
+    },
+    {
+      "name": "models",
+      "path": "/models",
+      "file": "/home/user/AI-Orchestrator/docs/screenshots/26-models.png"
+    },
+    {
+      "name": "analytics",
+      "path": "/analytics",
+      "file": "/home/user/AI-Orchestrator/docs/screenshots/27-analytics.png"
+    },
+    {
+      "name": "evaluations",
+      "path": "/evaluations",
+      "file": "/home/user/AI-Orchestrator/docs/screenshots/28-evaluations.png"
+    },
+    {
+      "name": "evaluation-datasets",
+      "path": "/evaluations/datasets",
+      "file": "/home/user/AI-Orchestrator/docs/screenshots/29-evaluation-datasets.png"
+    },
+    {
+      "name": "evaluation-runs",
+      "path": "/evaluations/runs?id=evr_01M61XKE6HHVFBVFFGHBSMY4H4",
+      "file": "/home/user/AI-Orchestrator/docs/screenshots/30-evaluation-runs.png"
+    },
+    {
+      "name": "evaluation-compare",
+      "path": "/evaluations/compare?a=evr_01M61XKE4PFWX29K6Z8VY2216V&b=evr_01M61XKE6HHVFBVFFGHBSMY4H4",
+      "file": "/home/user/AI-Orchestrator/docs/screenshots/31-evaluation-compare.png"
+    },
+    {
+      "name": "security",
+      "path": "/security",
+      "file": "/home/user/AI-Orchestrator/docs/screenshots/32-security.png"
+    },
+    {
+      "name": "security-users",
+      "path": "/security/users",
+      "file": "/home/user/AI-Orchestrator/docs/screenshots/33-security-users.png"
+    },
+    {
+      "name": "security-roles",
+      "path": "/security/roles",
+      "file": "/home/user/AI-Orchestrator/docs/screenshots/34-security-roles.png"
+    },
+    {
+      "name": "security-audit",
+      "path": "/security/audit",
+      "file": "/home/user/AI-Orchestrator/docs/screenshots/35-security-audit.png"
+    },
+    {
+      "name": "settings",
+      "path": "/settings",
+      "file": "/home/user/AI-Orchestrator/docs/screenshots/36-settings.png"
+    },
+    {
+      "name": "settings-workspace",
+      "path": "/settings/workspace",
+      "file": "/home/user/AI-Orchestrator/docs/screenshots/37-settings-workspace.png"
+    },
+    {
+      "name": "settings-account",
+      "path": "/settings/account",
+      "file": "/home/user/AI-Orchestrator/docs/screenshots/38-settings-account.png"
+    },
+    {
+      "name": "settings-api-keys",
+      "path": "/settings/api-keys",
+      "file": "/home/user/AI-Orchestrator/docs/screenshots/39-settings-api-keys.png"
+    },
+    {
+      "name": "settings-billing",
+      "path": "/settings/billing",
+      "file": "/home/user/AI-Orchestrator/docs/screenshots/40-settings-billing.png"
+    },
+    {
+      "name": "api-docs",
+      "path": "/api/docs",
+      "file": "/home/user/AI-Orchestrator/docs/screenshots/41-api-docs.png"
+    },
+    {
+      "name": "login",
+      "path": "/login",
+      "file": "/home/user/AI-Orchestrator/docs/screenshots/42-login.png"
+    },
+    {
+      "name": "register",
+      "path": "/register",
+      "file": "/home/user/AI-Orchestrator/docs/screenshots/43-register.png"
+    },
+    {
+      "name": "invite",
+      "path": "/invite/j6ik__Rlcva10Nh1V0ReYIzw1MkYEfX2GPTLL_oYdtM",
+      "file": "/home/user/AI-Orchestrator/docs/screenshots/44-invite.png"
+    }
+  ],
+  "ids": {
+    "support": "agt_01M61XKCE4PZQSNWB1043XDP6S",
+    "wf": "wfl_01M61XKCQM4BCG40F2R4CTFDE1"
+  }
+}
