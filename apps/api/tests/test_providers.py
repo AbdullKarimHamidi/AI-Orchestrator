@@ -6,7 +6,7 @@ import pytest
 
 from app.providers import registry
 from app.providers.anthropic import AnthropicAdapter
-from app.providers.base import ChatMessage, ChatRequest, ProviderConfig, ProviderError
+from app.providers.base import ChatMessage, ChatRequest, ProviderConfig, ProviderError, ToolCall, ToolSpec
 from app.providers.gemini import GeminiAdapter
 from app.providers.openai import OpenAIAdapter, OpenAICompatibleAdapter
 
@@ -70,15 +70,63 @@ async def test_gemini_request_and_usage():
 
     def h(req):
         seen["url"], seen["h"], seen["body"] = str(req.url), req.headers, json.loads(req.content)
-        return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": "g"}]}, "finishReason": "STOP"}],
-                                         "usageMetadata": {"promptTokenCount": 4, "candidatesTokenCount": 1}})
+        return httpx.Response(200, json={
+            "id": "int_test",
+            "status": "completed",
+            "steps": [{"type": "model_output", "content": [{"type": "text", "text": "g"}]}],
+            "usage": {"total_input_tokens": 4, "total_output_tokens": 1},
+        })
 
     r = await GeminiAdapter(cfg("gemini"), transport=mock(h)).chat(REQ)
-    assert seen["url"] == "https://generativelanguage.googleapis.com/v1beta/models/m1:generateContent"
+    assert seen["url"] == "https://generativelanguage.googleapis.com/v1beta/interactions"
     assert "key=" not in seen["url"] and seen["h"]["x-goog-api-key"] == "sk-secret-test-key-1234"
-    assert seen["body"]["systemInstruction"] == {"parts": [{"text": "be brief"}]}
-    assert seen["body"]["generationConfig"]["maxOutputTokens"] == 50
-    assert (r.text, r.input_tokens, r.output_tokens) == ("g", 4, 1)
+    assert seen["body"]["model"] == "m1"
+    assert seen["body"]["system_instruction"] == "be brief"
+    assert seen["body"]["generation_config"]["max_output_tokens"] == 50
+    assert seen["body"]["store"] is False
+    assert seen["body"]["input"] == [{"type": "user_input", "content": [{"type": "text", "text": "hello"}]}]
+    assert (r.text, r.input_tokens, r.output_tokens, r.provider_request_id) == ("g", 4, 1, "int_test")
+
+
+async def test_gemini_interactions_preserve_function_call_history():
+    seen = {}
+
+    def h(req):
+        seen["body"] = json.loads(req.content)
+        return httpx.Response(200, json={
+            "id": "int_after_tool",
+            "status": "completed",
+            "steps": [{"type": "model_output", "content": [{"type": "text", "text": "done"}]}],
+            "usage": {"total_input_tokens": 12, "total_output_tokens": 2},
+        })
+
+    request = ChatRequest(
+        model="gemini-3.8-flash",
+        messages=[
+            ChatMessage("user", "What is the weather?"),
+            ChatMessage("assistant", "", tool_calls=[
+                ToolCall(id="fc_123", name="get_weather", arguments={"city": "Boston"})
+            ]),
+            ChatMessage("tool", "Sunny", tool_call_id="fc_123", name="get_weather"),
+        ],
+        system="Be concise",
+        tools=[ToolSpec(name="get_weather", description="Get weather", parameters={
+            "type": "object", "properties": {"city": {"type": "string"}}
+        })],
+    )
+
+    result = await GeminiAdapter(cfg("gemini"), transport=mock(h)).chat(request)
+    assert seen["body"]["model"] == "gemini-3.8-flash"
+    assert seen["body"]["system_instruction"] == "Be concise"
+    assert seen["body"]["tools"][0]["type"] == "function"
+    assert seen["body"]["input"][1] == {
+        "type": "function_call", "id": "fc_123", "name": "get_weather", "arguments": {"city": "Boston"}
+    }
+    assert seen["body"]["input"][2] == {
+        "type": "function_result", "call_id": "fc_123", "name": "get_weather",
+        "result": [{"type": "text", "text": "Sunny"}]
+    }
+    assert result.text == "done"
 
 
 @pytest.mark.parametrize("status,kind", [(401, "auth"), (429, "rate_limit"), (500, "unavailable"),
