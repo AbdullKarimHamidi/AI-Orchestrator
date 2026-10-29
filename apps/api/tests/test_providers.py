@@ -219,6 +219,44 @@ async def test_test_model_calls_selected_model_and_records_audit(alice):
     actions = [i["action"] for i in (await alice.get("/audit-logs")).json()["items"]]
     assert "provider.test_model" in actions
 
+async def test_test_model_timeout_is_bounded_and_returned_as_json(alice):
+    p = (await alice.post("/model-providers", json={
+        "kind": "openai_compatible",
+        "name": "Slow local model",
+        "base_url": "http://localhost:11434/v1",
+        "timeout_seconds": 60,
+    })).json()
+    seen = {}
+
+    def h(req):
+        seen["timeout"] = req.extensions.get("timeout", {})
+        raise httpx.ReadTimeout("simulated provider stall", request=req)
+
+    registry.test_transport = mock(h)
+    try:
+        response = await alice.post(f"/model-providers/{p['id']}/test-model", json={"model": "slow-model"})
+        assert response.status_code == 200, response.text
+        assert response.json()["ok"] is False
+        assert response.json()["error"].startswith("timeout:")
+        assert seen["timeout"].get("read", 60) <= 20
+    finally:
+        registry.test_transport = None
+
+
+async def test_gemini_model_catalog_excludes_legacy_models():
+    def h(req):
+        assert req.url.path.endswith("/models")
+        return httpx.Response(200, json={"models": [
+            {"name": "models/gemini-2.5-flash", "supportedGenerationMethods": ["generateContent"]},
+            {"name": "models/gemini-3.8-flash", "supportedGenerationMethods": ["generateContent"]},
+            {"name": "models/embedding-001", "supportedGenerationMethods": ["generateContent"]},
+            {"name": "models/gemini-3.8-image", "supportedGenerationMethods": ["predict"]},
+        ]})
+
+    models = await GeminiAdapter(cfg("gemini"), transport=mock(h)).list_models()
+    assert models == ["gemini-3.8-flash"]
+
+
 async def test_provider_validation(alice):
     assert (await alice.post("/model-providers", json={"kind": "openai", "name": "nokey"})).status_code == 422
     assert (await alice.post("/model-providers", json={"kind": "openai_compatible", "name": "nourl"})).status_code == 422
