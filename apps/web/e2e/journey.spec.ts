@@ -120,6 +120,6 @@ test("enterprise journey (demo mode)", async ({ page }) => {
     await page.goto("/dashboard")
     await expect(page.getByText(/used the Demo provider/)).toBeVisible()
     await page.goto("/security/audit")
-    await expect(page.getByText("agent.publish")).toBeVisible()
+    await expect(page.getByRole("cell", { name: "agent.publish", exact: true }).first()).toBeVisible()
   })
 })
