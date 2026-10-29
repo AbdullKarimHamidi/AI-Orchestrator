@@ -18,7 +18,7 @@ from app.repositories.projects import ProjectRepository
 from app.repositories.runs import RunRepository
 from app.schemas.projects import ProjectCreate, ProjectDocumentCreate, ProjectDocumentUpdate, ProjectUpdate
 from app.schemas.runs import RunCreate
-from app.services.runs import RunService, present_run
+from app.services.runs import RunService
 
 
 class ProjectService:
