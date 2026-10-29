@@ -12,6 +12,7 @@ import { api } from "@/lib/api-client"
 import { pageOf } from "@/lib/schemas"
 import { projectSchema } from "@/lib/schemas/projects"
 import { useWorkspaceCtx } from "@/lib/workspace-context"
+import { cn } from "cn"
 
 const statusLabel: Record<string, string> = {
   planning: "Planning", ready: "Plan ready", in_progress: "In progress", blocked: "Blocked",
