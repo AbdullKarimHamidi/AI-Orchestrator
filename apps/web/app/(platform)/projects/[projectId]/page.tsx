@@ -39,11 +39,13 @@ export default function ProjectDetailPage() {
   })
   const data = project.data
   const selected = selectedId === "__new__" ? undefined : data?.documents.find((d) => d.id === selectedId) ?? data?.documents[0]
+  // This effect intentionally hydrates the editable form when the selected server document changes.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     if (selectedId === "__new__") { setTitle(""); setContent(""); setFeedback(""); return }
     if (!selected) { setSelectedId(""); setTitle(""); setContent(""); setFeedback(""); return }
     setSelectedId(selected.id); setTitle(selected.title); setContent(selected.content); setFeedback(selected.feedback)
-  }, [selectedId, selected?.id, selected?.revision])
+  }, [selectedId, selected])
   async function invalidate() {
     await Promise.all([qc.invalidateQueries({ queryKey: ["project", workspaceId, projectId] }), qc.invalidateQueries({ queryKey: ["projects", workspaceId] })])
   }
@@ -117,7 +119,7 @@ export default function ProjectDetailPage() {
         </div>
         <aside className="space-y-5">
           <Card><CardHeader><CardTitle>Planning activity</CardTitle><CardDescription>Agent runs are queued independently and execute in the background.</CardDescription></CardHeader><CardContent className="space-y-3">
-            {data.planning_runs.length === 0 ? <p className="text-sm text-muted-foreground">No planning runs yet.</p> : data.planning_runs.slice().reverse().map((run, i) => <div key={run.run_id} className="rounded-lg border p-3"><div className="flex items-start justify-between gap-2"><p className="text-sm font-medium">{run.agent_name}</p><span className="rounded-full border px-2 py-0.5 text-[11px]">{runStatusLabel[run.status] ?? run.status}</span></div><p className="mt-1 text-xs text-muted-foreground">{run.purpose}</p>{run.error != null && <p className="mt-2 text-xs text-destructive">{String(typeof run.error === "object" ? JSON.stringify(run.error) : run.error)}</p>}{run.document_id && <p className="mt-2 text-xs text-emerald-600">Document created</p>}</div>)}
+            {data.planning_runs.length === 0 ? <p className="text-sm text-muted-foreground">No planning runs yet.</p> : data.planning_runs.slice().reverse().map((run) => <div key={run.run_id} className="rounded-lg border p-3"><div className="flex items-start justify-between gap-2"><p className="text-sm font-medium">{run.agent_name}</p><span className="rounded-full border px-2 py-0.5 text-[11px]">{runStatusLabel[run.status] ?? run.status}</span></div><p className="mt-1 text-xs text-muted-foreground">{run.purpose}</p>{run.error != null && <p className="mt-2 text-xs text-destructive">{String(typeof run.error === "object" ? JSON.stringify(run.error) : run.error)}</p>}{run.document_id && <p className="mt-2 text-xs text-emerald-600">Document created</p>}</div>)}
           </CardContent></Card>
           <Card><CardHeader><CardTitle>Team configuration</CardTitle><CardDescription>Set up any number of agents after the plan is approved.</CardDescription></CardHeader><CardContent className="space-y-3">{data.teams.length === 0 ? <p className="text-sm text-muted-foreground">No specialist teams configured yet.</p> : data.teams.map((team) => <div key={team.id} className="rounded-lg border p-3"><p className="font-medium">{team.name}</p><p className="mt-1 text-xs text-muted-foreground">{team.responsibility}</p><p className="mt-2 text-xs">{team.agent_ids.length} agents · up to {team.parallelism} parallel tasks</p></div>)}<p className="text-xs text-muted-foreground">Team configuration is saved with the project. Automated task scheduling, code changes, and continuous supervisory correction are planned as the next orchestration phase; they are not falsely represented as active here.</p></CardContent></Card>
         </aside>
