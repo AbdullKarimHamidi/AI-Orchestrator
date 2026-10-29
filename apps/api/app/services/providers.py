@@ -1,3 +1,4 @@
+import logging
 import time
 
 from pymongo.asynchronous.database import AsyncDatabase
@@ -15,6 +16,8 @@ from app.repositories.audit import AuditRepository
 from app.repositories.base import now
 from app.repositories.providers import ProviderRepository
 from app.schemas.providers import ProviderCreate, ProviderUpdate
+
+log = logging.getLogger(__name__)
 
 DEMO_PROVIDER_NAME = "Demo (synthetic, no real model)"
 
@@ -187,7 +190,12 @@ class ProviderService:
             raise Unprocessable(f"Model {model} is not on the allowlist for this provider", code="MODEL_NOT_ALLOWED")
         started = time.monotonic()
         try:
-            result = await build_adapter(runtime_config(p)).chat(ChatRequest(
+            # This is a synchronous UI probe, not an agent run. Keep it below
+            # reverse-proxy/browser timeouts so provider stalls return a JSON result
+            # instead of a proxy-generated HTML 500.
+            cfg = runtime_config(p)
+            cfg.timeout_seconds = min(cfg.timeout_seconds, 20.0)
+            result = await build_adapter(cfg).chat(ChatRequest(
                 model=model,
                 system="You are checking whether this model is available. Follow the user instruction exactly.",
                 messages=[ChatMessage(role="user", content="Reply with exactly: MODEL_OK")],
@@ -206,8 +214,14 @@ class ProviderService:
             # Do not expose request headers, credentials, or provider internals in API errors.
             outcome = {"ok": False, "response": None, "error": f"Unexpected provider error ({type(exc).__name__})"}
         latency = int((time.monotonic() - started) * 1000)
-        await self.audit.record(ws_id, user_id, "provider.test_model", "provider", pid,
-                                {"model": model, "ok": outcome["ok"], "latency_ms": latency})
+        try:
+            await self.audit.record(ws_id, user_id, "provider.test_model", "provider", pid,
+                                    {"model": model, "ok": outcome["ok"], "latency_ms": latency})
+        except Exception:
+            # The probe result should still reach the user if the audit collection
+            # has a transient failure. Keep the failure visible in sanitized logs.
+            log.exception("failed to audit provider model test",
+                          extra={"extra_fields": {"provider_id": pid, "model": model, "ok": outcome["ok"]}})
         return {**outcome, "latency_ms": latency}
 
     async def test_connection(self, ws_id: str, user_id: str, pid: str) -> dict:
