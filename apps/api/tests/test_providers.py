@@ -82,8 +82,9 @@ async def test_gemini_request_and_usage():
     assert "key=" not in seen["url"] and seen["h"]["x-goog-api-key"] == "sk-secret-test-key-1234"
     assert seen["body"]["model"] == "m1"
     assert seen["body"]["system_instruction"] == "be brief"
-    assert seen["body"]["generation_config"]["max_output_tokens"] == 50
-    assert seen["body"]["generation_config"]["temperature"] == 0.2
+    assert seen["body"]["generation_config"] == {"max_output_tokens": 50}
+    assert "temperature" not in seen["body"]["generation_config"]
+    assert "top_p" not in seen["body"]["generation_config"]
     assert seen["body"]["store"] is False
     assert seen["body"]["input"] == [{"type": "user_input", "content": [{"type": "text", "text": "hello"}]}]
     assert (r.text, r.input_tokens, r.output_tokens, r.provider_request_id) == ("g", 4, 1, "int_test")
