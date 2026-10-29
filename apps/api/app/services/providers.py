@@ -209,6 +209,7 @@ class ProviderService:
         await self.audit.record(ws_id, user_id, "provider.test_model", "provider", pid,
                                 {"model": model, "ok": outcome["ok"], "latency_ms": latency})
         return {**outcome, "latency_ms": latency}
+
     async def test_connection(self, ws_id: str, user_id: str, pid: str) -> dict:
         p = await self.get(ws_id, pid)
         started = time.monotonic()
