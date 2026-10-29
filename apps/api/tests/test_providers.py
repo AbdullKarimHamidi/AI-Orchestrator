@@ -78,7 +78,7 @@ async def test_gemini_request_and_usage():
         })
 
     r = await GeminiAdapter(cfg("gemini"), transport=mock(h)).chat(REQ)
-    assert seen["url"] == "https://generativelanguage.googleapis.com/v1beta/interactions"
+    assert seen["url"] == "https://generativelanguage.googleapis.com/v1/interactions"
     assert "key=" not in seen["url"] and seen["h"]["x-goog-api-key"] == "sk-secret-test-key-1234"
     assert seen["body"]["model"] == "m1"
     assert seen["body"]["system_instruction"] == "be brief"
