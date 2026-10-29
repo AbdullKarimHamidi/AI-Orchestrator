@@ -140,8 +140,12 @@ class GeminiAdapter(HttpAdapter):
             "GET", f"{self.base}/models", headers=self._headers(), params={"pageSize": 200}
         )
         # The model catalog remains the Models API; Interactions is the inference API.
+        # The Interactions API does not support legacy Gemini 2.x models.
+        # Do not offer models in the picker that cannot be invoked by this adapter.
         return sorted(
-            model["name"].removeprefix("models/")
+            name
             for model in data.get("models", [])
             if "generateContent" in (model.get("supportedGenerationMethods") or [])
+            for name in [model["name"].removeprefix("models/")]
+            if name.startswith("gemini-3.")
         )
