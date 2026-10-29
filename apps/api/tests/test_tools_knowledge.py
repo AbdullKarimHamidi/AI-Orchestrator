@@ -101,10 +101,24 @@ def test_anthropic_tool_wire_format():
 
 def test_gemini_tool_wire_format():
     body = GeminiAdapter(ProviderConfig("gemini", "k", None, 5)).build_body(_conv())
-    assert body["tools"][0]["functionDeclarations"][0]["parametersJsonSchema"] == {"type": "object"}
-    assert body["contents"][1]["parts"][0]["functionCall"]["name"] == "weather"
-    assert body["contents"][2]["parts"][0]["functionResponse"] == {"name": "weather",
-                                                                  "response": {"result": "sunny"}}
+    assert body["tools"][0] == {
+        "type": "function",
+        "name": "weather",
+        "description": "d",
+        "parameters": {"type": "object"},
+    }
+    assert body["input"][1] == {
+        "type": "function_call",
+        "id": "c1",
+        "name": "weather",
+        "arguments": {"city": "Kabul"},
+    }
+    assert body["input"][2] == {
+        "type": "function_result",
+        "call_id": "c1",
+        "name": "weather",
+        "result": [{"type": "text", "text": "sunny"}],
+    }
 
 
 async def test_openai_parses_tool_calls():
