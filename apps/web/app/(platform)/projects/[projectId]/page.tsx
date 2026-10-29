@@ -38,11 +38,12 @@ export default function ProjectDetailPage() {
     refetchInterval: (q) => q.state.data?.planning_runs.some((r) => ["queued", "running"].includes(r.status)) ? 2000 : false,
   })
   const data = project.data
-  const selected = data?.documents.find((d) => d.id === selectedId) ?? data?.documents[0]
+  const selected = selectedId === "__new__" ? undefined : data?.documents.find((d) => d.id === selectedId) ?? data?.documents[0]
   useEffect(() => {
+    if (selectedId === "__new__") { setTitle(""); setContent(""); setFeedback(""); return }
     if (!selected) { setSelectedId(""); setTitle(""); setContent(""); setFeedback(""); return }
     setSelectedId(selected.id); setTitle(selected.title); setContent(selected.content); setFeedback(selected.feedback)
-  }, [selected?.id, selected?.revision])
+  }, [selectedId, selected?.id, selected?.revision])
   async function invalidate() {
     await Promise.all([qc.invalidateQueries({ queryKey: ["project", workspaceId, projectId] }), qc.invalidateQueries({ queryKey: ["projects", workspaceId] })])
   }
@@ -96,7 +97,7 @@ export default function ProjectDetailPage() {
             <CardContent className="space-y-3"><Textarea rows={4} value={feedback} onChange={(e) => setFeedback(e.target.value)} maxLength={20000} placeholder="For example: split the backend into services, add role-based access, change the database model, or simplify the UI…" /><Button onClick={() => startPlan.mutate()} disabled={startPlan.isPending}><Play className="size-4" /> {startPlan.isPending ? "Queueing planners…" : data.documents.length ? "Revise plan with feedback" : "Generate project plan"}</Button></CardContent>
           </Card>
           <Card>
-            <CardHeader><div className="flex flex-wrap items-center justify-between gap-2"><div><CardTitle>Project documents</CardTitle><CardDescription>Edit generated plans, add your feedback, and approve reviewed documents.</CardDescription></div><Button variant="outline" onClick={() => { setSelectedId(""); setTitle(""); setContent(""); setFeedback("") }}><FileText className="size-4" /> New document</Button></div></CardHeader>
+            <CardHeader><div className="flex flex-wrap items-center justify-between gap-2"><div><CardTitle>Project documents</CardTitle><CardDescription>Edit generated plans, add your feedback, and approve reviewed documents.</CardDescription></div><Button variant="outline" onClick={() => { setSelectedId("__new__"); setTitle(""); setContent(""); setFeedback("") }}><FileText className="size-4" /> New document</Button></div></CardHeader>
             <CardContent className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
               <div className="space-y-2">
                 {data.documents.length === 0 && <p className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">Generated documents will appear here.</p>}
