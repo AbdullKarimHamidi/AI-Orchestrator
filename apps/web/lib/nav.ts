@@ -1,5 +1,5 @@
 import {
-  Activity, BarChart3, Bot, Boxes, BrainCircuit, Cpu, FlaskConical, GitBranch, KeyRound, LayoutDashboard, FolderKanban,
+  Activity, BarChart3, Bot, Boxes, BrainCircuit, Cpu, FlaskConical, FolderKanban, GitBranch, KeyRound, LayoutDashboard,
   Library, Plug, Settings, Shield, Wrench, type LucideIcon,
 } from "lucide-react"
 
@@ -17,7 +17,8 @@ export const NAV_SECTIONS: { title: string; items: NavItem[] }[] = [
     title: "Build",
     items: [
       { href: "/agents", label: "Agents", icon: Bot, status: "available" },
-      { href: "/workflows", label: "Workflows", icon: GitBranch, status: "available" },\n      { href: "/projects", label: "Project Creator", icon: FolderKanban, status: "available" },
+      { href: "/workflows", label: "Workflows", icon: GitBranch, status: "available" },
+      { href: "/projects", label: "Project Creator", icon: FolderKanban, status: "available" },
       { href: "/tools", label: "Tools", icon: Wrench, status: "available" },
       { href: "/integrations", label: "Integrations", icon: Plug, status: "available" },
       { href: "/knowledge", label: "Knowledge", icon: Library, status: "available" },
