@@ -12,7 +12,19 @@ class GeminiAdapter(HttpAdapter):
 
     @property
     def base(self) -> str:
+        # The Models catalog is still queried through v1beta.
         return (self.cfg.base_url or "https://generativelanguage.googleapis.com/v1beta").rstrip("/")
+
+    @property
+    def interactions_url(self) -> str:
+        # Google's stable Interactions endpoint is /v1/interactions. Existing
+        # provider records may store the older Models API base ending in /v1beta.
+        base = self.base
+        if base.endswith("/v1beta"):
+            base = f"{base[:-len('/v1beta')]}/v1"
+        elif not base.endswith("/v1"):
+            base = f"{base}/v1"
+        return f"{base}/interactions"
 
     def _headers(self) -> dict:
         # Keep the key in a header, never in the URL or logs.
@@ -83,7 +95,7 @@ class GeminiAdapter(HttpAdapter):
     async def chat(self, req: ChatRequest) -> ChatResult:
         data = await self._request(
             "POST",
-            f"{self.base}/interactions",
+            self.interactions_url,
             headers=self._headers(),
             json=self.build_body(req),
         )
