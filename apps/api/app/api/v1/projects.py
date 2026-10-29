@@ -3,9 +3,15 @@ from pymongo.asynchronous.database import AsyncDatabase
 
 from app.api.deps import Ctx, db_dep, require
 from app.schemas.common import Page
-from app.schemas.projects import (ProjectCreate, ProjectDocumentCreate,
-                                  ProjectDocumentUpdate, ProjectOut, ProjectPlanStart, ProjectPlanStartOut,
-                                  ProjectUpdate)
+from app.schemas.projects import (
+    ProjectCreate,
+    ProjectDocumentCreate,
+    ProjectDocumentUpdate,
+    ProjectOut,
+    ProjectPlanStart,
+    ProjectPlanStartOut,
+    ProjectUpdate,
+)
 from app.services.projects import ProjectService
 
 router = APIRouter(prefix="/projects", tags=["projects"])
