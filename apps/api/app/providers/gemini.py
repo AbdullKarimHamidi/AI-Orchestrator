@@ -22,6 +22,15 @@ class GeminiAdapter(HttpAdapter):
     def _text_step(kind: str, text: str) -> dict:
         return {"type": kind, "content": [{"type": "text", "text": text}]}
 
+    @staticmethod
+    def _generation_config(req: ChatRequest) -> dict:
+        config = {"max_output_tokens": req.max_output_tokens}
+        if req.temperature is not None:
+            config["temperature"] = req.temperature
+        if req.top_p is not None:
+            config["top_p"] = req.top_p
+        return config
+
     def build_body(self, req: ChatRequest) -> dict:
         steps: list[dict] = []
         for message in group_tool_results(req.messages):
@@ -57,7 +66,7 @@ class GeminiAdapter(HttpAdapter):
             # The orchestrator already owns conversation history. Avoid storing
             # duplicate user conversations in Google's interaction history.
             "store": False,
-            "generation_config": {"max_output_tokens": req.max_output_tokens},
+            "generation_config": self._generation_config(req),
         }
         if req.system:
             body["system_instruction"] = req.system
