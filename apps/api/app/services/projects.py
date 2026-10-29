@@ -62,11 +62,25 @@ class ProjectService:
                 item["error"] = run["error"]
                 changed = True
         if changed:
-            # Update status snapshots without overwriting concurrently edited project fields.
-            await self.projects.col.update_one(
-                {"_id": project_id, "workspace_id": ws_id},
+            # A compare-and-swap prevents concurrent polling requests from persisting duplicate
+            # documents or overwriting a user's project edits.
+            if project.get("status") == "planning" and project.get("planning_runs"):
+                terminal = {"completed", "failed", "cancelled", "timed_out"}
+                if all(item.get("status") in terminal for item in project["planning_runs"]):
+                    project["status"] = "ready" if project.get("documents") and all(
+                        item.get("status") == "completed" for item in project["planning_runs"]
+                    ) else "blocked"
+            saved = await self.projects.col.update_one(
+                {"_id": project_id, "workspace_id": ws_id, "revision": project["revision"]},
                 {"$set": {"planning_runs": project.get("planning_runs", []),
-                          "documents": project.get("documents", []), "updated_at": now()}})
+                          "documents": project.get("documents", []), "status": project.get("status"),
+                          "updated_at": now()}, "$inc": {"revision": 1}})
+            if saved.modified_count != 1:
+                latest = await self.projects.get(ws_id, project_id)
+                if latest:
+                    return latest
+            else:
+                project["revision"] += 1
         return project
 
     async def list(self, ws_id: str, limit: int, offset: int) -> tuple[list[dict], int]:
