@@ -1,7 +1,7 @@
 "use client"
 
 import { zodResolver } from "@hookform/resolvers/zod"
-import { Plus, Trash2 } from "lucide-react"
+import { FlaskConical, Plus, Trash2 } from "lucide-react"
 import Link from "next/link"
 import { useState } from "react"
 import { useController, useFieldArray, useForm, useWatch, type Control, type UseFormRegister } from "react-hook-form"
@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import type { AgentInput } from "@/hooks/use-api"
+import { api, errorMessage } from "@/lib/api-client"
 import type { AgentConfig, KnowledgeBase, Provider, Tool } from "@/lib/schemas"
 
 const jsonObject = z
@@ -124,9 +125,33 @@ function ModelPicker({ prefix, providers, control, register, errors }: {
   const providerField = prefix === "primary" ? "provider_id" : (`${prefix}.provider_id` as const)
   const modelField = prefix === "primary" ? "model" : (`${prefix}.model` as const)
   const pid = useWatch({ control, name: providerField }) as string
+  const useModelValue = useWatch({ control, name: modelField }) as string
   const provider = providers.find((p) => p.id === pid)
   const suggestions = provider ? (provider.allowed_models.length ? provider.allowed_models : provider.suggested_models) : []
   const listId = `models-${prefix.replace(".", "-")}`
+  const [testState, setTestState] = useState<{ ok: boolean; message: string } | null>(null)
+  const [testing, setTesting] = useState(false)
+
+  async function testModel() {
+    if (!pid || !String(useModelValue ?? "").trim()) return
+    setTesting(true)
+    setTestState(null)
+    try {
+      const result = await api.post(`/model-providers/${pid}/test-model`, z.object({
+        ok: z.boolean(), latency_ms: z.number(), response: z.string().nullable().optional(), error: z.string().nullable().optional(),
+      }), { model: String(useModelValue).trim() })
+      setTestState({
+        ok: result.ok,
+        message: result.ok
+          ? `Model responded in ${result.latency_ms} ms${result.response ? ` — ${result.response}` : ""}`
+          : result.error ?? "The model test failed.",
+      })
+    } catch (error) {
+      setTestState({ ok: false, message: errorMessage(error) })
+    } finally {
+      setTesting(false)
+    }
+  }
   const pidId = `${listId}-provider`
   const modelId = `${listId}-model`
   return (
@@ -151,6 +176,12 @@ function ModelPicker({ prefix, providers, control, register, errors }: {
             <option key={m} value={m} />
           ))}
         </datalist>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <Button type="button" variant="outline" size="sm" disabled={!pid || !String(useModelValue ?? "").trim() || testing} onClick={testModel}>
+            <FlaskConical className="size-3.5" /> {testing ? "Testing model…" : "Test model"}
+          </Button>
+          {testState && <p role="status" aria-live="polite" className={`text-xs ${testState.ok ? "text-emerald-600" : "text-destructive"}`}>{testState.ok ? "✓ " : "✕ "}{testState.message}</p>}
+        </div>
         <FieldError id={`${modelId}-err`} msg={errors?.model?.message} />
         {provider && provider.allowed_models.length > 0 && <p className="text-xs text-muted-foreground">Allowlist: {provider.allowed_models.join(", ")}</p>}
       </div>

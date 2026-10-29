@@ -4,6 +4,8 @@ from app.api.deps import Ctx, db_dep, require
 from app.repositories.audit import UsageRepository
 from app.schemas.providers import (
     ConnectionTestOut,
+    ModelTestOut,
+    ModelTestRequest,
     PresetAdd,
     PresetOut,
     ProviderCreate,
@@ -54,6 +56,12 @@ async def provider_usage(ctx: Ctx = Depends(require("usage:read")), db=Depends(d
                     "unpriced": {"$sum": {"$cond": ["$priced", 0, 1]}}}},
         {"$sort": {"calls": -1}}])
     return [{**r["_id"], **{k: v for k, v in r.items() if k != "_id"}} async for r in rows]
+
+
+@router.post("/{provider_id}/test-model", response_model=ModelTestOut)
+async def test_provider_model(provider_id: str, body: ModelTestRequest,
+                              ctx: Ctx = Depends(require("providers:write")), db=Depends(db_dep)):
+    return await ProviderService(db).test_model(ctx.workspace_id, ctx.user_id, provider_id, body.model)
 
 
 @router.get("/{provider_id}", response_model=ProviderOut)

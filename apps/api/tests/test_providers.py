@@ -146,6 +146,30 @@ async def test_connection_test_and_rotation(alice):
     assert "provider.rotate_key" in actions
 
 
+async def test_test_model_calls_selected_model_and_records_audit(alice):
+    p = (await alice.post("/model-providers", json={"kind": "openai_compatible", "name": "Local model",
+                                                    "base_url": "http://localhost:11434/v1"})).json()
+    seen = {}
+
+    def h(req):
+        seen["url"] = str(req.url)
+        seen["body"] = json.loads(req.content)
+        return httpx.Response(200, json={"choices": [{"message": {"content": "MODEL_OK"}}], "usage": {}})
+
+    registry.test_transport = mock(h)
+    try:
+        r = await alice.post(f"/model-providers/{p['id']}/test-model", json={"model": "qwen2.5-coder:7b"})
+        assert r.status_code == 200, r.text
+        assert r.json()["ok"] is True and r.json()["response"] == "MODEL_OK"
+        assert seen["url"] == "http://localhost:11434/v1/chat/completions"
+        assert seen["body"]["model"] == "qwen2.5-coder:7b"
+        assert seen["body"]["messages"][-1]["content"] == "Reply with exactly: MODEL_OK"
+    finally:
+        registry.test_transport = None
+
+    actions = [i["action"] for i in (await alice.get("/audit-logs")).json()["items"]]
+    assert "provider.test_model" in actions
+
 async def test_provider_validation(alice):
     assert (await alice.post("/model-providers", json={"kind": "openai", "name": "nokey"})).status_code == 422
     assert (await alice.post("/model-providers", json={"kind": "openai_compatible", "name": "nourl"})).status_code == 422

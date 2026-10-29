@@ -7,7 +7,7 @@ from app.core.config import get_settings
 from app.core.exceptions import Conflict, NotFound, Unprocessable
 from app.core.ids import new_id
 from app.core.security import get_cipher
-from app.providers.base import ProviderConfig, ProviderError
+from app.providers.base import ChatMessage, ChatRequest, ProviderConfig, ProviderError
 from app.providers.demo import DEMO_MODELS
 from app.providers.presets import FREE_PRESETS, PRESETS_BY_ID, Preset
 from app.providers.registry import build_adapter
@@ -175,6 +175,40 @@ class ProviderService:
         await self.repo.delete(ws_id, pid)
         await self.audit.record(ws_id, user_id, "provider.delete", "provider", pid)
 
+    async def test_model(self, ws_id: str, user_id: str, pid: str, model: str) -> dict:
+        """Make one tiny real inference request to verify this exact provider/model pair."""
+        p = await self.get(ws_id, pid)
+        model = model.strip()
+        if not model:
+            raise Unprocessable("Enter a model ID to test", code="MODEL_REQUIRED")
+        if not p.get("enabled", True):
+            raise Unprocessable("This provider is disabled. Enable it before testing.", code="PROVIDER_DISABLED")
+        if p.get("allowed_models") and model not in p["allowed_models"]:
+            raise Unprocessable(f"Model {model} is not on the allowlist for this provider", code="MODEL_NOT_ALLOWED")
+        started = time.monotonic()
+        try:
+            result = await build_adapter(runtime_config(p)).chat(ChatRequest(
+                model=model,
+                system="You are checking whether this model is available. Follow the user instruction exactly.",
+                messages=[ChatMessage(role="user", content="Reply with exactly: MODEL_OK")],
+                max_output_tokens=16,
+                temperature=0,
+            ))
+            response = (result.text or "").strip()[:300]
+            if not response and not result.tool_calls:
+                raise ProviderError("unknown", "The model returned an empty response")
+            outcome = {"ok": True, "response": response or "Model responded (tool call)", "error": None}
+        except ProviderError as exc:
+            outcome = {"ok": False, "response": None, "error": f"{exc.kind}: {exc.message}"[:500]}
+        except ValueError as exc:
+            outcome = {"ok": False, "response": None, "error": str(exc)[:500]}
+        except Exception as exc:
+            # Do not expose request headers, credentials, or provider internals in API errors.
+            outcome = {"ok": False, "response": None, "error": f"Unexpected provider error ({type(exc).__name__})"}
+        latency = int((time.monotonic() - started) * 1000)
+        await self.audit.record(ws_id, user_id, "provider.test_model", "provider", pid,
+                                {"model": model, "ok": outcome["ok"], "latency_ms": latency})
+        return {**outcome, "latency_ms": latency}
     async def test_connection(self, ws_id: str, user_id: str, pid: str) -> dict:
         p = await self.get(ws_id, pid)
         started = time.monotonic()

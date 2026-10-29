@@ -73,6 +73,17 @@ class ConnectionTestOut(OutModel):
     error: str | None = None
 
 
+class ModelTestRequest(ApiModel):
+    model: str = Field(min_length=1, max_length=200)
+
+
+class ModelTestOut(OutModel):
+    ok: bool
+    latency_ms: int
+    response: str | None = None
+    error: str | None = None
+
+
 class PresetOut(OutModel):
     id: str
     name: str
