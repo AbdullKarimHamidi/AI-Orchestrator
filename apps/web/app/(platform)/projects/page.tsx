@@ -6,13 +6,12 @@ import Link from "next/link"
 import { useMemo, useState } from "react"
 
 import { EmptyState, ErrorState, LoadingRows, PageHeader } from "@/components/common/states"
-import { Button, buttonVariants } from "@/components/ui/button"
+import { buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { api } from "@/lib/api-client"
 import { pageOf } from "@/lib/schemas"
 import { projectSchema } from "@/lib/schemas/projects"
 import { useWorkspaceCtx } from "@/lib/workspace-context"
-import { cn } from "cn"
 
 const statusLabel: Record<string, string> = {
   planning: "Planning", ready: "Plan ready", in_progress: "In progress", blocked: "Blocked",
