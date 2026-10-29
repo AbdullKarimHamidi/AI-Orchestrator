@@ -1,5 +1,5 @@
 import {
-  Activity, BarChart3, Bot, Boxes, BrainCircuit, Cpu, FlaskConical, GitBranch, KeyRound, LayoutDashboard,
+  Activity, BarChart3, Bot, Boxes, BrainCircuit, Cpu, FlaskConical, FolderKanban, GitBranch, KeyRound, LayoutDashboard,
   Library, Plug, Settings, Shield, Wrench, type LucideIcon,
 } from "lucide-react"
 
@@ -18,6 +18,7 @@ export const NAV_SECTIONS: { title: string; items: NavItem[] }[] = [
     items: [
       { href: "/agents", label: "Agents", icon: Bot, status: "available" },
       { href: "/workflows", label: "Workflows", icon: GitBranch, status: "available" },
+      { href: "/projects", label: "Project Creator", icon: FolderKanban, status: "available" },
       { href: "/tools", label: "Tools", icon: Wrench, status: "available" },
       { href: "/integrations", label: "Integrations", icon: Plug, status: "available" },
       { href: "/knowledge", label: "Knowledge", icon: Library, status: "available" },
@@ -46,7 +47,7 @@ export const ICONS = { Boxes, KeyRound }
 
 const LABELS: Record<string, string> = {
   dashboard: "Dashboard", agents: "Agents", new: "New", edit: "Edit", versions: "Versions", test: "Test console",
-  workflows: "Workflows", runs: "Runs", models: "Models", tools: "Tools", integrations: "Integrations", mcp: "MCP",
+  workflows: "Workflows", projects: "Project Creator", runs: "Runs", models: "Models", tools: "Tools", integrations: "Integrations", mcp: "MCP",
   knowledge: "Knowledge", bases: "Bases", documents: "Documents", memory: "Memory", security: "Security",
   users: "Users", roles: "Roles", account: "Account", "api-keys": "API keys", invite: "Invitation", audit: "Audit log", settings: "Settings", workspace: "Workspace", billing: "Billing",
   analytics: "Analytics", evaluations: "Evaluations", datasets: "Datasets", compare: "Compare",

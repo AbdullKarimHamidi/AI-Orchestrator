@@ -23,6 +23,10 @@ def _schema(required: list[str], props: dict) -> dict:
 
 
 VALIDATORS: dict[str, dict] = {
+    "projects": _schema(["_id", "workspace_id", "name", "idea", "status", "revision", "created_at"],
+                     {"_id": _STR, "workspace_id": _STR, "name": _STR, "idea": _STR,
+                      "status": {"enum": ["planning", "ready", "in_progress", "blocked", "completed", "archived"]},
+                      "revision": {"bsonType": ["int", "long"]}}),
     "users": _schema(["_id", "email", "password_hash", "created_at"],
                      {"_id": _STR, "email": _STR, "password_hash": _STR, "created_at": _DATE}),
     "workspaces": _schema(["_id", "name", "owner_id", "created_at"],
@@ -92,6 +96,11 @@ def index_plan() -> dict[str, list[IndexModel]]:
                       IndexModel([("status", ASCENDING), ("lease_expires_at", ASCENDING)])],
         "chunks": [IndexModel([("workspace_id", ASCENDING), ("kb_id", ASCENDING)]),
                    IndexModel([("workspace_id", ASCENDING), ("doc_id", ASCENDING)])],
+        "projects": [
+            IndexModel([("workspace_id", ASCENDING), ("updated_at", DESCENDING)]),
+            IndexModel([("workspace_id", ASCENDING), ("name_lower", ASCENDING)], unique=True,
+                       partialFilterExpression={"deleted": False}),
+        ],
         "workflows": [IndexModel([("workspace_id", ASCENDING), ("updated_at", DESCENDING)]),
                       IndexModel([("workspace_id", ASCENDING), ("name_lower", ASCENDING)], unique=True,
                                  partialFilterExpression={"deleted": False})],

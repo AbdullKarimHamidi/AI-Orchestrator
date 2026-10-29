@@ -8,6 +8,7 @@ from app.api.v1 import (
     health,
     knowledge,
     memory,
+    projects,
     providers,
     runs,
     tools,
@@ -16,6 +17,9 @@ from app.api.v1 import (
 )
 
 api_router = APIRouter(prefix="/api/v1")
-for r in (health.router, auth.router, workspaces.router, agents.router, providers.router, runs.router,
-          tools.router, knowledge.router, workflows.router, evaluations.router, memory.router, billing.router):
+for r in (
+    health.router, auth.router, workspaces.router, agents.router, providers.router, runs.router,
+    tools.router, knowledge.router, workflows.router, projects.router,
+    evaluations.router, memory.router, billing.router,
+):
     api_router.include_router(r)
