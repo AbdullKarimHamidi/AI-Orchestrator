@@ -206,7 +206,7 @@ class ProjectService:
         ], return_exceptions=True)
         queued = []
         errors = []
-        for agent_id, result in zip(agent_ids, results):
+        for agent_id, result in zip(agent_ids, results, strict=False):
             if isinstance(result, Exception):
                 errors.append({"agent_id": agent_id, "error": str(result)})
                 continue
