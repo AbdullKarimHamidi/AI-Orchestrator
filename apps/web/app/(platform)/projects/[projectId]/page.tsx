@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { ArrowLeft, Bot, CheckCircle2, Clock3, FileText, Play, Save, Sparkles } from "lucide-react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { toast } from "sonner"
 
 import { ErrorState, LoadingRows, PageHeader } from "@/components/common/states"
@@ -27,9 +27,9 @@ export default function ProjectDetailPage() {
   const { workspaceId } = useWorkspaceCtx()
   const qc = useQueryClient()
   const [selectedId, setSelectedId] = useState("")
-  const [title, setTitle] = useState("")
-  const [content, setContent] = useState("")
-  const [feedback, setFeedback] = useState("")
+  const [title, setTitle] = useState<string | null>(null)
+  const [content, setContent] = useState<string | null>(null)
+  const [feedback, setFeedback] = useState<string | null>(null)
   const [error, setError] = useState("")
   const project = useQuery({
     queryKey: ["project", workspaceId, projectId],
@@ -39,13 +39,9 @@ export default function ProjectDetailPage() {
   })
   const data = project.data
   const selected = selectedId === "__new__" ? undefined : data?.documents.find((d) => d.id === selectedId) ?? data?.documents[0]
-  // This effect intentionally hydrates the editable form when the selected server document changes.
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => {
-    if (selectedId === "__new__") { setTitle(""); setContent(""); setFeedback(""); return }
-    if (!selected) { setSelectedId(""); setTitle(""); setContent(""); setFeedback(""); return }
-    setSelectedId(selected.id); setTitle(selected.title); setContent(selected.content); setFeedback(selected.feedback)
-  }, [selectedId, selected])
+  const editorTitle = title ?? (selectedId === "__new__" ? "" : selected?.title ?? "")
+  const editorContent = content ?? (selectedId === "__new__" ? "" : selected?.content ?? "")
+  const editorFeedback = feedback ?? (selectedId === "__new__" ? "" : selected?.feedback ?? "")
   async function invalidate() {
     await Promise.all([qc.invalidateQueries({ queryKey: ["project", workspaceId, projectId] }), qc.invalidateQueries({ queryKey: ["projects", workspaceId] })])
   }
@@ -56,14 +52,14 @@ export default function ProjectDetailPage() {
   })
   const saveDoc = useMutation({
     mutationFn: (doc: ProjectDocument) => api.patch(`/projects/${projectId}/documents/${doc.id}`, projectSchema, {
-      revision: doc.revision, title: title.trim(), content, feedback, status: doc.status,
+      revision: doc.revision, title: editorTitle.trim(), content: editorContent, feedback: editorFeedback, status: doc.status,
     }),
-    onSuccess: async () => { toast.success("Document saved"); setError(""); await invalidate() },
+    onSuccess: async () => { toast.success("Document saved"); setError(""); setTitle(null); setContent(null); setFeedback(null); await invalidate() },
     onError: (e) => setError(e instanceof Error ? e.message : "Could not save document"),
   })
   const addDoc = useMutation({
-    mutationFn: () => api.post(`/projects/${projectId}/documents`, projectSchema, { title: title.trim() || "New project document", kind: "specification", content, feedback, status: "draft" }),
-    onSuccess: async (updated) => { const doc = updated.documents[updated.documents.length - 1]; setSelectedId(doc?.id ?? ""); toast.success("Document added"); await invalidate() },
+    mutationFn: () => api.post(`/projects/${projectId}/documents`, projectSchema, { title: editorTitle.trim() || "New project document", kind: "specification", content: editorContent, feedback: editorFeedback, status: "draft" }),
+    onSuccess: async (updated) => { const doc = updated.documents[updated.documents.length - 1]; setSelectedId(doc?.id ?? ""); setTitle(null); setContent(null); setFeedback(null); toast.success("Document added"); await invalidate() },
     onError: (e) => setError(e instanceof Error ? e.message : "Could not add document"),
   })
   const updateProject = useMutation({
@@ -96,21 +92,21 @@ export default function ProjectDetailPage() {
           </Card>
           <Card>
             <CardHeader><CardTitle>Planning feedback</CardTitle><CardDescription>Tell the planning agents what to change. Their next run receives this feedback and the selected existing documents.</CardDescription></CardHeader>
-            <CardContent className="space-y-3"><Textarea rows={4} value={feedback} onChange={(e) => setFeedback(e.target.value)} maxLength={20000} placeholder="For example: split the backend into services, add role-based access, change the database model, or simplify the UI…" /><Button onClick={() => startPlan.mutate()} disabled={startPlan.isPending}><Play className="size-4" /> {startPlan.isPending ? "Queueing planners…" : data.documents.length ? "Revise plan with feedback" : "Generate project plan"}</Button></CardContent>
+            <CardContent className="space-y-3"><Textarea rows={4} value={editorFeedback} onChange={(e) => setFeedback(e.target.value)} maxLength={20000} placeholder="For example: split the backend into services, add role-based access, change the database model, or simplify the UI…" /><Button onClick={() => startPlan.mutate()} disabled={startPlan.isPending}><Play className="size-4" /> {startPlan.isPending ? "Queueing planners…" : data.documents.length ? "Revise plan with feedback" : "Generate project plan"}</Button></CardContent>
           </Card>
           <Card>
-            <CardHeader><div className="flex flex-wrap items-center justify-between gap-2"><div><CardTitle>Project documents</CardTitle><CardDescription>Edit generated plans, add your feedback, and approve reviewed documents.</CardDescription></div><Button variant="outline" onClick={() => { setSelectedId("__new__"); setTitle(""); setContent(""); setFeedback("") }}><FileText className="size-4" /> New document</Button></div></CardHeader>
+            <CardHeader><div className="flex flex-wrap items-center justify-between gap-2"><div><CardTitle>Project documents</CardTitle><CardDescription>Edit generated plans, add your feedback, and approve reviewed documents.</CardDescription></div><Button variant="outline" onClick={() => { setSelectedId("__new__"); setTitle(null); setContent(null); setFeedback(null) }}><FileText className="size-4" /> New document</Button></div></CardHeader>
             <CardContent className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
               <div className="space-y-2">
                 {data.documents.length === 0 && <p className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">Generated documents will appear here.</p>}
-                {data.documents.map((doc) => <button key={doc.id} type="button" onClick={() => { setSelectedId(doc.id); setTitle(doc.title); setContent(doc.content); setFeedback(doc.feedback) }} className={cn("w-full rounded-lg border p-3 text-left transition-colors", selected?.id === doc.id ? "border-primary/50 bg-primary/5" : "hover:bg-accent/40")}><span className="block line-clamp-2 text-sm font-medium">{doc.title}</span><span className="mt-1 block text-xs capitalize text-muted-foreground">{doc.kind.replaceAll("_", " ")} · {doc.status.replaceAll("_", " ")}</span></button>)}
+                {data.documents.map((doc) => <button key={doc.id} type="button" onClick={() => { setSelectedId(doc.id); setTitle(null); setContent(null); setFeedback(null) }} className={cn("w-full rounded-lg border p-3 text-left transition-colors", selected?.id === doc.id ? "border-primary/50 bg-primary/5" : "hover:bg-accent/40")}><span className="block line-clamp-2 text-sm font-medium">{doc.title}</span><span className="mt-1 block text-xs capitalize text-muted-foreground">{doc.kind.replaceAll("_", " ")} · {doc.status.replaceAll("_", " ")}</span></button>)}
               </div>
               <div className="min-w-0 space-y-3">
-                <div className="space-y-1.5"><Label htmlFor="doc-title">Document title</Label><Input id="doc-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Architecture and implementation plan" /></div>
-                <div className="space-y-1.5"><Label htmlFor="doc-content">Document content (Markdown supported)</Label><Textarea id="doc-content" value={content} onChange={(e) => setContent(e.target.value)} rows={16} className="font-mono text-xs leading-5" placeholder="Write or edit the project specification here…" /></div>
+                <div className="space-y-1.5"><Label htmlFor="doc-title">Document title</Label><Input id="doc-title" value={editorTitle} onChange={(e) => setTitle(e.target.value)} placeholder="Architecture and implementation plan" /></div>
+                <div className="space-y-1.5"><Label htmlFor="doc-content">Document content (Markdown supported)</Label><Textarea id="doc-content" value={editorContent} onChange={(e) => setContent(e.target.value)} rows={16} className="font-mono text-xs leading-5" placeholder="Write or edit the project specification here…" /></div>
                 <div className="space-y-1.5"><Label htmlFor="doc-feedback">Feedback for the next revision</Label><Textarea id="doc-feedback" value={feedback} onChange={(e) => setFeedback(e.target.value)} rows={3} placeholder="What should the planning agents change in this document?" /></div>
                 <div className="flex flex-wrap gap-2">
-                  {selected ? <Button onClick={() => saveDoc.mutate(selected)} disabled={busy || !title.trim()}><Save className="size-4" /> Save document</Button> : <Button onClick={() => addDoc.mutate()} disabled={busy || !title.trim()}><PlusIcon /> Save new document</Button>}
+                  {selected ? <Button onClick={() => saveDoc.mutate(selected)} disabled={busy || !editorTitle.trim()}><Save className="size-4" /> Save document</Button> : <Button onClick={() => addDoc.mutate()} disabled={busy || !title.trim()}><PlusIcon /> Save new document</Button>}
                   {selected && <Button variant="outline" onClick={() => api.patch(`/projects/${projectId}/documents/${selected.id}`, projectSchema, { revision: selected.revision, status: selected.status === "approved" ? "in_review" : "approved" }).then(async () => { toast.success(selected.status === "approved" ? "Moved back to review" : "Document approved"); await invalidate() }).catch((e) => setError(e instanceof Error ? e.message : "Could not update document"))}><CheckCircle2 className="size-4" /> {selected.status === "approved" ? "Reopen review" : "Approve document"}</Button>}
                 </div>
               </div>
