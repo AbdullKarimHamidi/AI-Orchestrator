@@ -35,7 +35,7 @@ type Values = z.input<typeof providerFormSchema>
 const HINTS: Record<string, string> = {
   openai: "Chat Completions API. Example models: gpt-4.1-mini",
   anthropic: "Messages API (anthropic-version 2023-06-01).",
-  gemini: "Gemini generateContent API (key sent as x-goog-api-key header).",
+  gemini: "Gemini Interactions API for Gemini 3.x models (key sent as x-goog-api-key header).",
   openai_compatible: "Any server exposing /v1/chat/completions (vLLM, Ollama, LM Studio…). Include /v1 in the base URL.",
 }
 
