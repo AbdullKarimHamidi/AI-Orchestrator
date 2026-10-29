@@ -17,7 +17,7 @@ export default function WorkflowsPage() {
   const workflows = useWorkflows(workspaceId)
   const canWrite = can(role, "agents:write")
   const [search, setSearch] = useState("")
-  const items = workflows.data?.items ?? []
+  const items = useMemo(() => workflows.data?.items ?? [], [workflows.data?.items])
   const filtered = useMemo(() => items.filter((w) => (w.name + " " + w.description).toLowerCase().includes(search.toLowerCase())), [items, search])
   const published = items.filter((w) => w.status === "published").length
   const drafts = items.filter((w) => w.status === "draft").length
