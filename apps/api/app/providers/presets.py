@@ -56,8 +56,8 @@ FREE_PRESETS: list[Preset] = [
            signup_url="https://console.mistral.ai/api-keys",
            free_tier="Free 'Experiment' plan after phone verification, rate limited."),
     Preset(id="ollama", name="Ollama (local, free)", kind="openai_compatible",
-           base_url="http://localhost:11434/v1", env_key="ollama_base_url",
-           models=["llama3.2", "qwen2.5", "mistral", "gemma3"], signup_url="https://ollama.com/download",
+           base_url="http://host.docker.internal:11434/v1", env_key="ollama_base_url",
+           models=["qwen2.5-coder:7b", "llama3.2", "qwen2.5", "mistral", "gemma3"], signup_url="https://ollama.com/download",
            free_tier="Runs models on your own machine: free and unlimited. Install Ollama, then "
                      "run: ollama pull llama3.2", needs_key=False, timeout_seconds=300),
 ]

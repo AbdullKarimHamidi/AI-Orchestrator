@@ -13,6 +13,8 @@ async def test_preset_catalog_lists_every_free_provider():
     assert set(items) == {p.id for p in FREE_PRESETS}
     assert items["groq"]["signup_url"].startswith("https://") and items["groq"]["provider_id"] is None
     assert items["ollama"]["needs_key"] is False
+    assert items["ollama"]["base_url"] == "http://host.docker.internal:11434/v1"
+    assert "qwen2.5-coder:7b" in items["ollama"]["models"]
 
 
 async def test_add_preset_needs_key_and_stores_it_encrypted():

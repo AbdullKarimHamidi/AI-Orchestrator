@@ -56,10 +56,10 @@ function PresetCard({ p, workspaceId, canWrite }: { p: Preset; workspaceId: stri
             <Label htmlFor={inputId}>{p.needs_key ? "API key" : "Ollama URL"}</Label>
             <div className="flex gap-2">
               <Input id={inputId} type={p.needs_key ? "password" : "url"} autoComplete="off" value={value}
-                placeholder={p.needs_key ? "Paste your key" : "http://localhost:11434/v1"} onChange={(e) => setValue(e.target.value)} />
+                placeholder={p.needs_key ? "Paste your key" : "http://host.docker.internal:11434/v1"} onChange={(e) => setValue(e.target.value)} />
               <Button type="submit" size="sm" disabled={m.addPreset.isPending || (p.needs_key && !value.trim())}>Connect</Button>
             </div>
-            <p className="text-xs text-muted-foreground">Or set <code>{p.env_var}</code> in .env to connect it for every workspace.</p>
+            <p className="text-xs text-muted-foreground">{p.id === "ollama" ? "For Docker Desktop, use host.docker.internal and make sure Ollama accepts connections from Docker." : null} Or set <code>{p.env_var}</code> in .env to connect it for every workspace.</p>
           </form>
         )}
       </CardContent>

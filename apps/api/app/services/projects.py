@@ -142,6 +142,29 @@ class ProjectService:
         await self.audit.record(ws_id, user_id, "project.update", "project", project_id, {"fields": sorted(fields)})
         return updated
 
+    async def delete(self, ws_id: str, user_id: str, project_id: str) -> None:
+        """Soft-delete a project, preserving its documents and audit trail."""
+        project = await self.get(ws_id, project_id)
+        run_service = RunService(self.db)
+        terminal = {"completed", "failed", "cancelled", "timed_out"}
+        for item in project.get("planning_runs", []):
+            if item.get("status") not in terminal:
+                try:
+                    await run_service.cancel(ws_id, user_id, item["run_id"])
+                except (Conflict, NotFound):
+                    # A worker may finish the run while the project is being deleted.
+                    pass
+
+        result = await self.projects.col.update_one(
+            {"_id": project_id, "workspace_id": ws_id, "deleted": False},
+            {"$set": {"deleted": True, "deleted_at": now(), "updated_at": now()},
+             "$inc": {"revision": 1}},
+        )
+        if result.modified_count != 1:
+            raise NotFound("Project not found")
+        await self.audit.record(ws_id, user_id, "project.delete", "project", project_id)
+
+
     async def add_document(self, ws_id: str, user_id: str, project_id: str, req: ProjectDocumentCreate) -> dict:
         project = await self.get(ws_id, project_id)
         t = now()

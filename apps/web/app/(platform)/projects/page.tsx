@@ -1,14 +1,15 @@
 "use client"
 
-import { useQuery } from "@tanstack/react-query"
-import { ArrowRight, Bot, Clock3, FileText, FolderKanban, Plus, Sparkles } from "lucide-react"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { ArrowRight, Bot, Clock3, FileText, FolderKanban, Plus, Sparkles, Trash2 } from "lucide-react"
 import Link from "next/link"
 import { useMemo, useState } from "react"
+import { toast } from "sonner"
 
 import { EmptyState, ErrorState, LoadingRows, PageHeader } from "@/components/common/states"
-import { buttonVariants } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { api } from "@/lib/api-client"
+import { api, errorMessage } from "@/lib/api-client"
 import { pageOf } from "@/lib/schemas"
 import { projectSchema } from "@/lib/schemas/projects"
 import { useWorkspaceCtx } from "@/lib/workspace-context"
@@ -29,7 +30,16 @@ const statusTone: Record<string, string> = {
 
 export default function ProjectsPage() {
   const { workspaceId } = useWorkspaceCtx()
+  const queryClient = useQueryClient()
   const [search, setSearch] = useState("")
+  const deleteProject = useMutation({
+    mutationFn: (projectId: string) => api.delete(`/projects/${projectId}`),
+    onSuccess: async () => {
+      toast.success("Project deleted")
+      await queryClient.invalidateQueries({ queryKey: ["projects", workspaceId] })
+    },
+    onError: (error) => toast.error(errorMessage(error)),
+  })
   const projects = useQuery({
     queryKey: ["projects", workspaceId],
     queryFn: () => api.get("/projects", pageOf(projectSchema), { query: { limit: 200 } }),
@@ -66,22 +76,36 @@ export default function ProjectsPage() {
       ) : (
         <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
           {filtered.map((project) => (
-            <Link key={project.id} href={`/projects/${project.id}`} className="group flex min-w-0 flex-col rounded-xl border bg-card p-5 transition-colors hover:border-primary/40 hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-              <div className="flex items-start gap-3">
-                <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><FolderKanban className="size-5" /></div>
-                <div className="min-w-0 flex-1"><h2 className="truncate font-semibold">{project.name}</h2><p className="mt-1 line-clamp-2 min-h-10 text-sm text-muted-foreground">{project.description || project.idea}</p></div>
-                <ArrowRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+            <div key={project.id} className="group flex min-w-0 flex-col rounded-xl border bg-card p-5 transition-colors hover:border-primary/40 hover:bg-accent/20">
+              <Link href={`/projects/${project.id}`} className="flex min-w-0 flex-1 flex-col rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                <div className="flex items-start gap-3">
+                  <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><FolderKanban className="size-5" /></div>
+                  <div className="min-w-0 flex-1"><h2 className="truncate font-semibold">{project.name}</h2><p className="mt-1 line-clamp-2 min-h-10 text-sm text-muted-foreground">{project.description || project.idea}</p></div>
+                  <ArrowRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+                </div>
+                <div className="mt-5 flex flex-wrap items-center gap-2">
+                  <span className={cn("rounded-full border px-2.5 py-1 text-xs font-medium", statusTone[project.status] ?? statusTone.archived)}>{statusLabel[project.status] ?? project.status}</span>
+                  {project.planning_runs.some((r) => ["queued", "running"].includes(r.status)) && <span className="flex items-center gap-1 text-xs text-muted-foreground"><Clock3 className="size-3.5" /> Agents working</span>}
+                </div>
+                <div className="mt-4 grid grid-cols-3 gap-2 border-t pt-4 text-xs text-muted-foreground">
+                  <div><p className="text-base font-semibold text-foreground">{project.documents.length}</p><p>Documents</p></div>
+                  <div><p className="text-base font-semibold text-foreground">{project.teams.length}</p><p>Teams</p></div>
+                  <div><p className="text-base font-semibold text-foreground">{project.planning_agent_ids.length}</p><p>Planners</p></div>
+                </div>
+              </Link>
+              <div className="mt-4 flex justify-end border-t pt-3">
+                <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive"
+                  disabled={deleteProject.isPending}
+                  aria-label={`Delete ${project.name}`}
+                  onClick={() => {
+                    if (window.confirm(`Delete "${project.name}"? This hides the project and cancels any active planning runs. Its history is retained for audit purposes.`)) {
+                      deleteProject.mutate(project.id)
+                    }
+                  }}>
+                  <Trash2 className="size-4" /> Delete
+                </Button>
               </div>
-              <div className="mt-5 flex flex-wrap items-center gap-2">
-                <span className={cn("rounded-full border px-2.5 py-1 text-xs font-medium", statusTone[project.status] ?? statusTone.archived)}>{statusLabel[project.status] ?? project.status}</span>
-                {project.planning_runs.some((r) => ["queued", "running"].includes(r.status)) && <span className="flex items-center gap-1 text-xs text-muted-foreground"><Clock3 className="size-3.5" /> Agents working</span>}
-              </div>
-              <div className="mt-4 grid grid-cols-3 gap-2 border-t pt-4 text-xs text-muted-foreground">
-                <div><p className="text-base font-semibold text-foreground">{project.documents.length}</p><p>Documents</p></div>
-                <div><p className="text-base font-semibold text-foreground">{project.teams.length}</p><p>Teams</p></div>
-                <div><p className="text-base font-semibold text-foreground">{project.planning_agent_ids.length}</p><p>Planners</p></div>
-              </div>
-            </Link>
+            </div>
           ))}
         </div>
       )}

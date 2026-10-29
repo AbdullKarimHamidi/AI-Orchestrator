@@ -44,6 +44,12 @@ async def update_project(project_id: str, body: ProjectUpdate, ctx: Ctx = Depend
     return svc.present(await svc.update(ctx.workspace_id, ctx.user_id, project_id, body))
 
 
+@router.delete("/{project_id}", status_code=204)
+async def delete_project(project_id: str, ctx: Ctx = Depends(require("agents:write")),
+                         db: AsyncDatabase = Depends(db_dep)):
+    await ProjectService(db).delete(ctx.workspace_id, ctx.user_id, project_id)
+
+
 @router.post("/{project_id}/documents", response_model=ProjectOut, status_code=201)
 async def create_document(project_id: str, body: ProjectDocumentCreate, ctx: Ctx = Depends(require("agents:write")),
                           db: AsyncDatabase = Depends(db_dep)):
