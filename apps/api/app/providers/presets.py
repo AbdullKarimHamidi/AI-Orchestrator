@@ -35,7 +35,7 @@ FREE_PRESETS: list[Preset] = [
            signup_url="https://console.groq.com/keys",
            free_tier="Free plan with per-minute and per-day request limits, no card needed. Very fast."),
     Preset(id="gemini", name="Google Gemini (free tier)", kind="gemini", base_url=None, env_key="gemini_api_key",
-           models=["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-pro"],
+           models=["gemini-3.8-flash", "gemini-3.5-flash-lite"],
            signup_url="https://aistudio.google.com/apikey",
            free_tier="Free tier in Google AI Studio with daily request limits, no card needed."),
     Preset(id="cerebras", name="Cerebras (free tier)", kind="openai_compatible",
