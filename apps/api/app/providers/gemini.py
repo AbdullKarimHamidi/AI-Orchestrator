@@ -24,12 +24,10 @@ class GeminiAdapter(HttpAdapter):
 
     @staticmethod
     def _generation_config(req: ChatRequest) -> dict:
-        config = {"max_output_tokens": req.max_output_tokens}
-        if req.temperature is not None:
-            config["temperature"] = req.temperature
-        if req.top_p is not None:
-            config["top_p"] = req.top_p
-        return config
+        # Interactions GenerationConfig currently supports max_output_tokens,
+        # thinking_level, tool_choice, seed, and stop_sequences. Unlike
+        # generateContent, it does not define temperature or top_p.
+        return {"max_output_tokens": req.max_output_tokens}
 
     def build_body(self, req: ChatRequest) -> dict:
         steps: list[dict] = []
