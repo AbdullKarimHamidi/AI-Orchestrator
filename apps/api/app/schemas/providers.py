@@ -5,7 +5,7 @@ from pydantic import Field, HttpUrl, model_validator
 
 from app.schemas.common import ApiModel, OutModel
 
-ProviderKind = Literal["openai", "anthropic", "gemini", "openai_compatible", "demo"]
+ProviderKind = Literal["openai", "anthropic", "gemini", "openai_compatible", "ollama", "demo"]
 
 
 class ModelPrice(ApiModel):
@@ -26,7 +26,7 @@ class ProviderCreate(ApiModel):
     def _check(self) -> "ProviderCreate":
         if self.kind == "openai_compatible" and not self.base_url:
             raise ValueError("base_url is required for openai_compatible providers")
-        if self.kind not in ("demo", "openai_compatible") and not self.api_key:
+        if self.kind not in ("demo", "openai_compatible", "ollama") and not self.api_key:
             raise ValueError("api_key is required for this provider kind")
         return self
 

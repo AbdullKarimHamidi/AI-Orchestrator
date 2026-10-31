@@ -4,6 +4,7 @@ from app.providers.anthropic import AnthropicAdapter
 from app.providers.base import ProviderAdapter, ProviderConfig
 from app.providers.demo import DemoAdapter
 from app.providers.gemini import GeminiAdapter
+from app.providers.ollama import OllamaAdapter
 from app.providers.openai import OpenAIAdapter, OpenAICompatibleAdapter
 
 _ADAPTERS = {
@@ -11,6 +12,7 @@ _ADAPTERS = {
     "openai_compatible": OpenAICompatibleAdapter,
     "anthropic": AnthropicAdapter,
     "gemini": GeminiAdapter,
+    "ollama": OllamaAdapter,
     "demo": DemoAdapter,
 }
 

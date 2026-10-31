@@ -10,6 +10,7 @@ from app.core.ids import new_id
 from app.core.security import get_cipher
 from app.providers.base import ChatMessage, ChatRequest, ProviderConfig, ProviderError
 from app.providers.demo import DEMO_MODELS
+from app.providers.ollama import normalize_ollama_url
 from app.providers.presets import FREE_PRESETS, PRESETS_BY_ID, Preset
 from app.providers.registry import build_adapter
 from app.repositories.audit import AuditRepository
@@ -38,6 +39,20 @@ def present(p: dict) -> dict:
             "enabled": p.get("enabled", True), "pricing": p.get("pricing", {}),
             "health": p.get("health") or {"status": "unknown"}, "created_at": p["created_at"],
             "updated_at": p.get("updated_at", p["created_at"])}
+
+
+def _clean_base_url(kind: str, url: str | None) -> str | None:
+    if kind == "ollama":
+        return normalize_ollama_url(url)
+    return url.rstrip("/") if url else None
+
+
+def merge_installed(installed: list[str], suggested: list[str]) -> list[str]:
+    """The models a local server really has (chat models first, embedding models last); the preset's
+    suggestions only when nothing is installed yet."""
+    if not installed:
+        return list(suggested)
+    return sorted(installed, key=lambda m: "embed" in m.lower())[:50]
 
 
 def runtime_config(p: dict) -> ProviderConfig:
@@ -72,7 +87,7 @@ class ProviderService:
             value = getattr(s, preset.env_key, "")
             if not value or await self.repo.by_preset(ws_id, preset.id):
                 continue
-            base_url = value.rstrip("/") if not preset.needs_key else preset.base_url
+            base_url = _clean_base_url(preset.kind, value) if not preset.needs_key else preset.base_url
             try:
                 await self.repo.insert(self._preset_doc(ws_id, preset, base_url) | (
                     {"key_from_env": preset.env_key} if preset.needs_key else {}))
@@ -110,7 +125,9 @@ class ProviderService:
         if preset.needs_key and not api_key:
             raise Unprocessable(f"Paste your {preset.name} API key (get one at {preset.signup_url})",
                                 code="API_KEY_REQUIRED")
-        doc = self._preset_doc(ws_id, preset, (base_url or preset.base_url or "").rstrip("/") or None)
+        doc = self._preset_doc(ws_id, preset, _clean_base_url(preset.kind, base_url or preset.base_url))
+        if preset.kind == "ollama":
+            await self._probe_ollama(doc)
         if api_key:
             doc |= {"api_key_enc": get_cipher().encrypt(api_key), "api_key_last4": api_key[-4:],
                     "key_rotated_at": now()}
@@ -121,6 +138,24 @@ class ProviderService:
         await self.audit.record(ws_id, user_id, "provider.create", "provider", doc["_id"],
                                 {"kind": preset.kind, "preset": preset.id})
         return doc
+
+    @staticmethod
+    async def _probe_ollama(doc: dict) -> None:
+        """Ask the local server which models are pulled, so agents use one that exists. A server that
+        is not running yet still gets connected (it can be started later); the card shows why."""
+        cfg = runtime_config(doc)
+        cfg.timeout_seconds = 5.0
+        started = time.monotonic()
+        try:
+            installed = await build_adapter(cfg).list_models()
+        except ProviderError as exc:
+            doc["health"] = {"status": "unhealthy", "checked_at": now(), "error": exc.message,
+                             "latency_ms": int((time.monotonic() - started) * 1000)}
+            return
+        doc["suggested_models"] = merge_installed(installed, doc["suggested_models"])
+        doc["installed_models"] = installed
+        doc["health"] = {"status": "healthy", "checked_at": now(), "error": None,
+                         "latency_ms": int((time.monotonic() - started) * 1000)}
 
     async def list(self, ws_id: str) -> list[dict]:
         await self.ensure_demo(ws_id)
@@ -139,7 +174,7 @@ class ProviderService:
             raise Conflict("The demo provider is managed automatically", code="DEMO_MANAGED")
         t = now()
         doc = {"_id": new_id("prv"), "workspace_id": ws_id, "kind": req.kind, "name": req.name,
-               "base_url": str(req.base_url).rstrip("/") if req.base_url else None,
+               "base_url": _clean_base_url(req.kind, str(req.base_url) if req.base_url else None),
                "allowed_models": req.allowed_models, "timeout_seconds": req.timeout_seconds, "enabled": True,
                "pricing": {k: v.model_dump() for k, v in req.pricing.items()},
                "health": {"status": "unknown"}, "created_at": t, "updated_at": t}
@@ -157,7 +192,7 @@ class ProviderService:
         p = await self.get(ws_id, pid)
         fields = req.model_dump(exclude_unset=True, exclude={"api_key"}, mode="json")
         if "base_url" in fields and fields["base_url"]:
-            fields["base_url"] = fields["base_url"].rstrip("/")
+            fields["base_url"] = _clean_base_url(p["kind"], fields["base_url"])
         if req.api_key:
             if p["kind"] == "demo":
                 raise Conflict("The demo provider has no key", code="DEMO_MANAGED")
@@ -227,6 +262,8 @@ class ProviderService:
     async def test_connection(self, ws_id: str, user_id: str, pid: str) -> dict:
         p = await self.get(ws_id, pid)
         started = time.monotonic()
+        models: list[str] = []
+        result: dict
         try:
             models = await build_adapter(runtime_config(p)).list_models()
             result = {"ok": True, "models": models[:500], "error": None}
@@ -235,8 +272,11 @@ class ProviderService:
         except ValueError as exc:  # undecryptable key
             result = {"ok": False, "models": [], "error": str(exc)}
         latency = int((time.monotonic() - started) * 1000)
-        await self.repo.update(ws_id, pid, {"health": {"status": "healthy" if result["ok"] else "unhealthy",
-                                                       "checked_at": now(), "latency_ms": latency,
-                                                       "error": result["error"]}})
+        fields: dict = {"health": {"status": "healthy" if result["ok"] else "unhealthy", "checked_at": now(),
+                                   "latency_ms": latency, "error": result["error"]}}
+        if result["ok"] and p["kind"] == "ollama":
+            fields |= {"installed_models": models,
+                       "suggested_models": merge_installed(models, p.get("suggested_models", []))}
+        await self.repo.update(ws_id, pid, fields)
         await self.audit.record(ws_id, user_id, "provider.test", "provider", pid, {"ok": result["ok"]})
         return {**result, "latency_ms": latency}

@@ -1,5 +1,6 @@
 """Free provider presets and the starter agent pack."""
 from app.core.config import get_settings
+from app.providers.ollama import default_ollama_url
 from app.providers.presets import FREE_PRESETS
 from app.services.providers import runtime_config
 from tests.conftest import make_user
@@ -15,7 +16,8 @@ async def test_preset_catalog_lists_every_free_provider():
     assert items["gemini"]["models"][0] == "gemini-3.8-flash"
     assert "gemini-2.5-flash" not in items["gemini"]["models"]
     assert items["ollama"]["needs_key"] is False
-    assert items["ollama"]["base_url"] == "http://host.docker.internal:11434/v1"
+    assert items["ollama"]["kind"] == "ollama"
+    assert items["ollama"]["base_url"] == default_ollama_url()
     assert "qwen2.5-coder:7b" in items["ollama"]["models"]
 
 
@@ -43,7 +45,8 @@ async def test_env_keys_provision_providers_without_storing_the_key(database):
         providers = {p["preset"]: p for p in (await alice.get("/model-providers")).json() if p["preset"]}
         assert set(providers) == {"gemini", "ollama"}
         assert providers["gemini"]["has_api_key"] and providers["gemini"]["api_key_last4"] == "wxyz"
-        assert providers["ollama"]["base_url"] == "http://localhost:11434/v1"
+        assert providers["ollama"]["base_url"] == "http://localhost:11434"
+        assert providers["ollama"]["kind"] == "ollama"
         doc = await database["model_providers"].find_one({"_id": providers["gemini"]["id"]})
         assert "api_key_enc" not in doc and runtime_config(doc).api_key == "AIza-env-key-wxyz"
     finally:
@@ -76,3 +79,46 @@ async def test_starter_pack_runs_on_demo_then_moves_to_free_provider():
     assert gen["draft"]["fallbacks"][0]["provider_id"] == gemini["id"]
     assert gen["published_version"] == 2 and not gen["draft_dirty"]
     assert after["Code Helper"]["draft"]["system_prompt"] == "my own prompt" == edited["draft"]["system_prompt"]
+
+
+async def test_ollama_preset_lists_installed_models(database):
+    """Connecting Ollama asks the server which models are pulled, so agents use one that exists."""
+    import httpx
+
+    from app.providers import registry
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/tags"
+        return httpx.Response(200, json={"models": [{"name": "nomic-embed-text:latest"}, {"name": "llama3.2:latest"}]})
+
+    registry.test_transport = httpx.MockTransport(handler)
+    try:
+        alice = await make_user("ollamaprobe")
+        r = await alice.post("/model-providers/presets/ollama", json={"base_url": "http://localhost:11434/v1/"})
+        assert r.status_code == 201, r.text
+        p = r.json()
+        assert (p["kind"], p["base_url"]) == ("ollama", "http://localhost:11434")
+        assert p["suggested_models"] == ["llama3.2:latest", "nomic-embed-text:latest"]
+        assert p["health"]["status"] == "healthy"
+    finally:
+        registry.test_transport = None
+
+
+async def test_ollama_preset_connects_even_when_server_is_down(database):
+    import httpx
+
+    from app.providers import registry
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused")
+
+    registry.test_transport = httpx.MockTransport(handler)
+    try:
+        alice = await make_user("ollamadown")
+        r = await alice.post("/model-providers/presets/ollama", json={})
+        assert r.status_code == 201, r.text
+        p = r.json()
+        assert p["health"]["status"] == "unhealthy" and "cannot reach Ollama" in p["health"]["error"]
+        assert p["suggested_models"][0] == "llama3.2"
+    finally:
+        registry.test_transport = None

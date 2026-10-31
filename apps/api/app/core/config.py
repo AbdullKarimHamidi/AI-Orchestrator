@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     worker_poll_interval_seconds: float = 0.5
     worker_concurrency: int = 4
     default_run_timeout_seconds: int = 120
-    max_run_timeout_seconds: int = 900
+    max_run_timeout_seconds: int = 1800
 
     # Tools. Private/loopback/link-local targets are blocked (SSRF protection) unless explicitly
     # allowed, e.g. for self-hosted installs whose tools call internal services.

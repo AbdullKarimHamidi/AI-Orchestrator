@@ -6,7 +6,7 @@ from pydantic import Field, model_validator
 from app.schemas.common import ApiModel, OutModel
 
 WorkflowStatus = Literal["draft", "published", "archived"]
-StepType = Literal["agent", "tool", "knowledge", "transform", "condition"]
+StepType = Literal["agent", "supervisor", "tool", "knowledge", "transform", "condition"]
 ConditionOp = Literal["equals", "not_equals", "contains", "not_contains", "regex", "is_empty", "not_empty",
                       "greater_than", "less_than"]
 STEP_ID = r"^[a-z][a-z0-9_]{0,39}$"
@@ -20,16 +20,33 @@ class Condition(ApiModel):
     case_sensitive: bool = False
 
 
+class Position(ApiModel):
+    """Where the node sits on the visual canvas. Layout only; it never changes execution."""
+    x: float = Field(ge=-100_000, le=100_000)
+    y: float = Field(ge=-100_000, le=100_000)
+
+
 class WorkflowStep(ApiModel):
     """One node. Steps run in list order unless `next` (or a condition's on_true/on_false)
     names another step id, or "end". Strings may use templates such as {{ input.message }},
-    {{ input.variables.x }}, {{ steps.<id>.text }} and {{ last.text }}."""
+    {{ input.variables.x }}, {{ steps.<id>.text }} and {{ last.text }}.
+
+    A ``supervisor`` step is an agent that leads a team: ``delegates`` lists the agent (or other
+    supervisor) steps it may hand tasks to. Those team members do not run in the main flow; they
+    run only when their supervisor delegates to them, in parallel, for up to ``max_rounds`` rounds
+    of plan, delegate and review. A delegate that is itself a supervisor leads its own sub-team."""
     id: str = Field(pattern=STEP_ID)
     type: StepType
     name: str = Field(default="", max_length=120)
-    # agent
+    # agent / supervisor
     agent_id: str | None = Field(default=None, max_length=64)
     message: str = Field(default="{{ input.message }}", max_length=20_000)
+    role: str = Field(default="", max_length=1000,
+                      description="What this member is responsible for; shown to its supervisor")
+    # supervisor
+    delegates: list[str] = Field(default_factory=list, max_length=60)
+    max_rounds: int = Field(default=3, ge=1, le=10)
+    parallelism: int = Field(default=8, ge=1, le=50)
     # tool
     tool_id: str | None = Field(default=None, max_length=64)
     arguments: dict[str, Any] = Field(default_factory=dict)
@@ -45,11 +62,16 @@ class WorkflowStep(ApiModel):
     on_false: str | None = Field(default=None, max_length=40)
     # routing for non-condition steps (None = the following step)
     next: str | None = Field(default=None, max_length=40)
+    position: Position | None = None
 
     @model_validator(mode="after")
     def _required_fields(self) -> "WorkflowStep":
-        if self.type == "agent" and not self.agent_id:
-            raise ValueError(f"step '{self.id}': an agent step needs agent_id")
+        if self.type in ("agent", "supervisor") and not self.agent_id:
+            raise ValueError(f"step '{self.id}': an {self.type} step needs agent_id")
+        if self.type == "supervisor" and not self.delegates:
+            raise ValueError(f"step '{self.id}': a supervisor needs at least one team member")
+        if self.type != "supervisor" and self.delegates:
+            raise ValueError(f"step '{self.id}': only supervisor steps can delegate")
         if self.type == "tool" and not self.tool_id:
             raise ValueError(f"step '{self.id}': a tool step needs tool_id")
         if self.type == "knowledge" and not self.knowledge_base_ids:
@@ -65,6 +87,8 @@ class WorkflowDefinition(ApiModel):
     steps: list[WorkflowStep] = Field(default_factory=list, max_length=50)
     max_step_executions: int = Field(default=50, ge=1, le=500,
                                      description="Loop guard: a run fails once this many steps have executed")
+    max_delegations: int = Field(default=200, ge=1, le=2000,
+                                 description="Cap on tasks supervisors may hand to team members in one run")
 
     @model_validator(mode="after")
     def _graph(self) -> "WorkflowDefinition":
@@ -75,12 +99,41 @@ class WorkflowDefinition(ApiModel):
         if END in ids:
             raise ValueError("'end' is reserved and cannot be a step id")
         known = set(ids) | {END}
+        by_id = {s.id: s for s in self.steps}
+        parent: dict[str, str] = {}
+        for s in self.steps:
+            for d in s.delegates:
+                if d == s.id:
+                    raise ValueError(f"step '{s.id}': a supervisor cannot delegate to itself")
+                if d not in by_id:
+                    raise ValueError(f"step '{s.id}': team member '{d}' is not a step")
+                if by_id[d].type not in ("agent", "supervisor"):
+                    raise ValueError(f"step '{s.id}': team member '{d}' must be an agent or supervisor step")
+                if d in parent and parent[d] != s.id:
+                    raise ValueError(f"step '{d}' reports to both '{parent[d]}' and '{s.id}'; "
+                                     "each member has one supervisor")
+                parent[d] = s.id
+        for start in parent:  # the reporting lines must form a tree, not a loop
+            seen, cur = {start}, start
+            while cur in parent:
+                cur = parent[cur]
+                if cur in seen:
+                    raise ValueError(f"supervisors '{start}' and '{cur}' delegate to each other in a loop")
+                seen.add(cur)
+        if self.steps and len(parent) == len(self.steps):
+            raise ValueError("every step is a team member; at least one step must run in the main flow")
         for s in self.steps:
             for field in ("next", "on_true", "on_false"):
                 target = getattr(s, field)
                 if target is not None and target not in known:
                     raise ValueError(f"step '{s.id}': {field} points to unknown step '{target}'")
+                if target in parent:
+                    raise ValueError(f"step '{s.id}': {field} points to '{target}', a team member that only "
+                                     "runs when its supervisor delegates to it")
         return self
+
+    def team_members(self) -> set[str]:
+        return {d for s in self.steps for d in s.delegates}
 
 
 class WorkflowCreate(ApiModel):
@@ -103,7 +156,7 @@ class WorkflowPublish(ApiModel):
 class WorkflowRunCreate(ApiModel):
     input: dict[str, Any] = Field(description="Must contain 'message' (string); may contain 'variables'")
     source: Literal["published", "draft"] = "published"
-    timeout_seconds: int | None = Field(default=None, ge=5, le=900)
+    timeout_seconds: int | None = Field(default=None, ge=5, le=3600)
 
 
 class WorkflowOut(OutModel):

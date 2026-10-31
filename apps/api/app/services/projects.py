@@ -3,6 +3,8 @@
 Planning agents are enqueued independently so the existing worker executes them concurrently.
 Project and document mutations are workspace scoped and use optimistic revision checks.
 """
+from __future__ import annotations
+
 import asyncio
 from typing import Any
 

@@ -79,7 +79,9 @@ class StarterAgentService:
         for preset_id in PROVIDER_PREFERENCE:
             p = await self.providers.by_preset(ws_id, preset_id)
             if p and p.get("enabled", True) and p.get("health", {}).get("status") != "unhealthy":
-                chain.append(ModelRef(provider_id=p["_id"], model=p["suggested_models"][0]))
+                models = p.get("allowed_models") or p.get("suggested_models") or []
+                if models:
+                    chain.append(ModelRef(provider_id=p["_id"], model=models[0]))
         if not chain:
             demo = await self.providers.by_kind(ws_id, "demo")
             if demo:

@@ -96,7 +96,7 @@ class WorkflowService:
         if not steps:
             problems.append("The workflow has no steps")
         for s in steps:
-            if s["type"] == "agent":
+            if s["type"] in ("agent", "supervisor"):
                 a = await self.agents.get(ws_id, s.get("agent_id") or "")
                 if not a:
                     problems.append(f"Step '{s['id']}': agent {s.get('agent_id')} not found")
@@ -171,7 +171,10 @@ class WorkflowService:
         await RunService(self.db).check_spend(ws_id)
 
         s = get_settings()
-        timeout = min(req.timeout_seconds or s.default_run_timeout_seconds * 2, s.max_run_timeout_seconds)
+        # A team of agents works in rounds, so supervisor workflows get the longest allowed default.
+        has_team = any(st.get("type") == "supervisor" for st in definition.get("steps") or [])
+        default = s.max_run_timeout_seconds if has_team else s.default_run_timeout_seconds * 2
+        timeout = min(req.timeout_seconds or default, s.max_run_timeout_seconds)
         t = now()
         doc = {"_id": new_id("run"), "workspace_id": ws_id, "kind": "workflow", "agent_id": "",
                "agent_name": w["name"], "agent_version": version, "workflow_id": w["_id"],
