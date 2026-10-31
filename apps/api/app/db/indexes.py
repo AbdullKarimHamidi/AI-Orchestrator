@@ -42,7 +42,7 @@ VALIDATORS: dict[str, dict] = {
     "agent_versions": _schema(["_id", "workspace_id", "agent_id", "version", "config", "config_hash"], {
         "workspace_id": _STR, "agent_id": _STR, "version": {"bsonType": ["int", "long"]}}),
     "model_providers": _schema(["_id", "workspace_id", "kind", "name"], {
-        "workspace_id": _STR, "kind": {"enum": ["openai", "anthropic", "gemini", "openai_compatible", "demo"]}}),
+        "workspace_id": _STR, "kind": {"enum": ["openai", "anthropic", "gemini", "openai_compatible", "ollama", "demo"]}}),
     "runs": _schema(["_id", "workspace_id", "status", "created_at"], {
         "workspace_id": _STR,
         "status": {"enum": ["queued", "running", "waiting_for_approval", "completed", "failed",
