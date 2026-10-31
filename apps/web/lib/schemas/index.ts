@@ -76,7 +76,7 @@ export const versionDiffSchema = z.object({
   changes: z.array(z.object({ path: z.string(), from: z.unknown(), to: z.unknown() })),
 })
 
-export const providerKindSchema = z.enum(["openai", "anthropic", "gemini", "openai_compatible", "demo"])
+export const providerKindSchema = z.enum(["openai", "anthropic", "gemini", "openai_compatible", "ollama", "demo"])
 export type ProviderKind = z.infer<typeof providerKindSchema>
 
 export const providerSchema = z.object({
@@ -327,7 +327,7 @@ export const searchHitSchema = z.object({ kb_id: z.string(), doc_id: z.string(),
 export type SearchHit = z.infer<typeof searchHitSchema>
 
 // ----- workflows -----
-export const stepTypeSchema = z.enum(["agent", "tool", "knowledge", "transform", "condition"])
+export const stepTypeSchema = z.enum(["agent", "supervisor", "tool", "knowledge", "transform", "condition"])
 export type StepType = z.infer<typeof stepTypeSchema>
 export const conditionOpSchema = z.enum(["equals", "not_equals", "contains", "not_contains", "regex", "is_empty", "not_empty", "greater_than", "less_than"])
 export type ConditionOp = z.infer<typeof conditionOpSchema>
@@ -348,10 +348,20 @@ export const workflowStepSchema = z.object({
   on_true: z.string().nullable(),
   on_false: z.string().nullable(),
   next: z.string().nullable(),
+  // supervisor teams (older definitions omit these, so they default)
+  role: z.string().default(""),
+  delegates: z.array(z.string()).default([]),
+  max_rounds: z.number().default(3),
+  parallelism: z.number().default(8),
+  position: z.object({ x: z.number(), y: z.number() }).nullable().default(null),
 })
 export type WorkflowStep = z.infer<typeof workflowStepSchema>
 
-export const workflowDefinitionSchema = z.object({ steps: z.array(workflowStepSchema), max_step_executions: z.number() })
+export const workflowDefinitionSchema = z.object({
+  steps: z.array(workflowStepSchema),
+  max_step_executions: z.number(),
+  max_delegations: z.number().default(200),
+})
 export type WorkflowDefinition = z.infer<typeof workflowDefinitionSchema>
 
 export const workflowSchema = z.object({

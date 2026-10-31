@@ -16,7 +16,7 @@ import { errorMessage } from "@/lib/api-client"
 
 export const providerFormSchema = z
   .object({
-    kind: z.enum(["openai", "anthropic", "gemini", "openai_compatible"]),
+    kind: z.enum(["openai", "anthropic", "gemini", "openai_compatible", "ollama"]),
     name: z.string().trim().min(1, "Name is required").max(80),
     api_key: z.string().max(500),
     base_url: z.string().trim(),
@@ -26,6 +26,8 @@ export const providerFormSchema = z
   .superRefine((v, ctx) => {
     if (v.kind === "openai_compatible") {
       if (!/^https?:\/\/.+/.test(v.base_url)) ctx.addIssue({ code: "custom", path: ["base_url"], message: "A http(s) base URL is required" })
+    } else if (v.kind === "ollama") {
+      if (v.base_url && !/^https?:\/\/.+/.test(v.base_url)) ctx.addIssue({ code: "custom", path: ["base_url"], message: "Use a http(s) URL such as http://localhost:11434" })
     } else if (!v.api_key) {
       ctx.addIssue({ code: "custom", path: ["api_key"], message: "API key is required" })
     }
@@ -36,7 +38,8 @@ const HINTS: Record<string, string> = {
   openai: "Chat Completions API. Example models: gpt-4.1-mini",
   anthropic: "Messages API (anthropic-version 2023-06-01).",
   gemini: "Gemini Interactions API for Gemini 3.x models (key sent as x-goog-api-key header).",
-  openai_compatible: "Any server exposing /v1/chat/completions (vLLM, Ollama, LM Studio…). Include /v1 in the base URL.",
+  openai_compatible: "Any server exposing /v1/chat/completions (vLLM, LM Studio…). Include /v1 in the base URL.",
+  ollama: "Models on your own computer through Ollama. No key. Test connection lists the models you have pulled.",
 }
 
 export function AddProviderDialog({ workspaceId, open, onOpenChange }: { workspaceId: string; open: boolean; onOpenChange: (o: boolean) => void }) {
@@ -58,7 +61,7 @@ export function AddProviderDialog({ workspaceId, open, onOpenChange }: { workspa
         api_key: v.api_key || undefined,
         base_url: v.base_url || undefined,
         allowed_models: v.allowed_models.split(",").map((s) => s.trim()).filter(Boolean),
-        timeout_seconds: v.timeout_seconds,
+        timeout_seconds: v.kind === "ollama" && v.timeout_seconds === 60 ? 300 : v.timeout_seconds,
       })
       toast.success("Provider added. Run a connection test to verify the key.")
       form.reset()
@@ -84,6 +87,7 @@ export function AddProviderDialog({ workspaceId, open, onOpenChange }: { workspa
               <option value="anthropic">Anthropic</option>
               <option value="gemini">Google Gemini</option>
               <option value="openai_compatible">OpenAI-compatible</option>
+              <option value="ollama">Ollama (local)</option>
             </select>
             <p className="text-xs text-muted-foreground">{HINTS[kind]}</p>
           </div>
@@ -92,15 +96,17 @@ export function AddProviderDialog({ workspaceId, open, onOpenChange }: { workspa
             <Input id="p-name" aria-invalid={!!errors.name} {...form.register("name")} />
             {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="p-key">API key{kind === "openai_compatible" && " (optional)"}</Label>
-            <Input id="p-key" type="password" autoComplete="off" aria-invalid={!!errors.api_key} {...form.register("api_key")} />
-            {errors.api_key && <p className="text-xs text-destructive">{errors.api_key.message}</p>}
-          </div>
-          {kind === "openai_compatible" && (
+          {kind !== "ollama" && (
             <div className="space-y-1.5">
-              <Label htmlFor="p-url">Base URL</Label>
-              <Input id="p-url" placeholder="http://localhost:11434/v1" aria-invalid={!!errors.base_url} {...form.register("base_url")} />
+              <Label htmlFor="p-key">API key{kind === "openai_compatible" && " (optional)"}</Label>
+              <Input id="p-key" type="password" autoComplete="off" aria-invalid={!!errors.api_key} {...form.register("api_key")} />
+              {errors.api_key && <p className="text-xs text-destructive">{errors.api_key.message}</p>}
+            </div>
+          )}
+          {(kind === "openai_compatible" || kind === "ollama") && (
+            <div className="space-y-1.5">
+              <Label htmlFor="p-url">{kind === "ollama" ? "Ollama URL (optional)" : "Base URL"}</Label>
+              <Input id="p-url" placeholder={kind === "ollama" ? "http://localhost:11434" : "http://localhost:8000/v1"} aria-invalid={!!errors.base_url} {...form.register("base_url")} />
               {errors.base_url && <p className="text-xs text-destructive">{errors.base_url.message}</p>}
             </div>
           )}

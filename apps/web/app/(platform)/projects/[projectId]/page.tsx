@@ -1,9 +1,9 @@
 "use client"
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, Bot, CheckCircle2, Clock3, FileText, Play, Save, Sparkles } from "lucide-react"
+import { ArrowLeft, Bot, CheckCircle2, Clock3, FileText, Network, Play, Save, Sparkles } from "lucide-react"
 import Link from "next/link"
-import { useParams } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import { useState } from "react"
 import { toast } from "sonner"
 
@@ -14,6 +14,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { projectTeamDefinition } from "@/components/workflows/canvas/graph"
+import { useWorkflowMutations } from "@/hooks/use-modules"
 import { api } from "@/lib/api-client"
 import { projectSchema, type ProjectDocument } from "@/lib/schemas/projects"
 import { useWorkspaceCtx } from "@/lib/workspace-context"
@@ -49,6 +51,17 @@ export default function ProjectDetailPage() {
     mutationFn: () => api.post(`/projects/${projectId}/plan`, null, { feedback }),
     onSuccess: async () => { toast.success("Planning agents queued"); setError(""); await invalidate() },
     onError: (e) => setError(e instanceof Error ? e.message : "Could not start planning"),
+  })
+  const workflows = useWorkflowMutations(workspaceId)
+  const router = useRouter()
+  const buildTeam = useMutation({
+    mutationFn: async () => {
+      const definition = data ? projectTeamDefinition(data) : null
+      if (!definition) throw new Error("Add at least one supervisor or planning agent and one team agent first.")
+      return workflows.create.mutateAsync({ name: `${data!.name} team`.slice(0, 120), description: `Agent team for project ${data!.name}`, definition })
+    },
+    onSuccess: (w) => { toast.success("Team workflow created. Check the agents, then publish it."); router.push(`/workflows/${w.id}/edit`) },
+    onError: (e) => setError(e instanceof Error ? e.message : "Could not build the team workflow"),
   })
   const saveDoc = useMutation({
     mutationFn: (doc: ProjectDocument) => api.patch(`/projects/${projectId}/documents/${doc.id}`, projectSchema, {
@@ -117,7 +130,7 @@ export default function ProjectDetailPage() {
           <Card><CardHeader><CardTitle>Planning activity</CardTitle><CardDescription>Agent runs are queued independently and execute in the background.</CardDescription></CardHeader><CardContent className="space-y-3">
             {data.planning_runs.length === 0 ? <p className="text-sm text-muted-foreground">No planning runs yet.</p> : data.planning_runs.slice().reverse().map((run) => <div key={run.run_id} className="rounded-lg border p-3"><div className="flex items-start justify-between gap-2"><p className="text-sm font-medium">{run.agent_name}</p><span className="rounded-full border px-2 py-0.5 text-[11px]">{runStatusLabel[run.status] ?? run.status}</span></div><p className="mt-1 text-xs text-muted-foreground">{run.purpose}</p>{run.error != null && <p className="mt-2 text-xs text-destructive">{String(typeof run.error === "object" ? JSON.stringify(run.error) : run.error)}</p>}{run.document_id && <p className="mt-2 text-xs text-emerald-600">Document created</p>}</div>)}
           </CardContent></Card>
-          <Card><CardHeader><CardTitle>Team configuration</CardTitle><CardDescription>Set up any number of agents after the plan is approved.</CardDescription></CardHeader><CardContent className="space-y-3">{data.teams.length === 0 ? <p className="text-sm text-muted-foreground">No specialist teams configured yet.</p> : data.teams.map((team) => <div key={team.id} className="rounded-lg border p-3"><p className="font-medium">{team.name}</p><p className="mt-1 text-xs text-muted-foreground">{team.responsibility}</p><p className="mt-2 text-xs">{team.agent_ids.length} agents · up to {team.parallelism} parallel tasks</p></div>)}<p className="text-xs text-muted-foreground">Team configuration is saved with the project. Automated task scheduling, code changes, and continuous supervisory correction are planned as the next orchestration phase; they are not falsely represented as active here.</p></CardContent></Card>
+          <Card><CardHeader><CardTitle>Team configuration</CardTitle><CardDescription>Set up any number of agents after the plan is approved.</CardDescription></CardHeader><CardContent className="space-y-3">{data.teams.length === 0 ? <p className="text-sm text-muted-foreground">No specialist teams configured yet.</p> : data.teams.map((team) => <div key={team.id} className="rounded-lg border p-3"><p className="font-medium">{team.name}</p><p className="mt-1 text-xs text-muted-foreground">{team.responsibility}</p><p className="mt-2 text-xs">{team.agent_ids.length} agents · up to {team.parallelism} parallel tasks</p></div>)}<p className="text-xs text-muted-foreground">Turn this team into a runnable workflow: your supervisor agents lead, each team gets a lead, and the leads delegate tasks to the team&apos;s agents in parallel. You can rearrange it on the canvas before publishing.</p><Button variant="outline" onClick={() => buildTeam.mutate()} disabled={buildTeam.isPending}><Network className="size-4" /> {buildTeam.isPending ? "Building…" : "Build team workflow"}</Button></CardContent></Card>
         </aside>
       </div>
     </div>

@@ -49,7 +49,7 @@ function ArgumentsEditor({ id, value, onChange }: { id: string; value: Record<st
   )
 }
 
-export function StepEditor({ step, index, count, ids, agents, tools, kbs, onChange, onMove, onRemove }: {
+export function StepEditor({ step, index, count, ids, agents, tools, kbs, onChange, onMove, onRemove, compact = false, steps = [] }: {
   step: WorkflowStep
   index: number
   count: number
@@ -58,27 +58,33 @@ export function StepEditor({ step, index, count, ids, agents, tools, kbs, onChan
   tools: Tool[]
   kbs: KnowledgeBase[]
   onChange: (s: WorkflowStep) => void
-  onMove: (dir: -1 | 1) => void
-  onRemove: () => void
+  onMove?: (dir: -1 | 1) => void
+  onRemove?: () => void
+  /** Canvas inspector: routes and team members are edited by connecting nodes, so their fields are hidden. */
+  compact?: boolean
+  /** All steps, used by the list editor to pick a supervisor's team members. */
+  steps?: WorkflowStep[]
 }) {
   const Meta = STEP_META[step.type]
   const p = `step-${index}`
   const set = (patch: Partial<WorkflowStep>) => onChange({ ...step, ...patch })
   const others = ids.filter((i) => i !== step.id)
+  const isAgentLike = step.type === "agent" || step.type === "supervisor"
+  const candidates = steps.filter((s) => s.id !== step.id && (s.type === "agent" || s.type === "supervisor"))
   return (
-    <section className="rounded-xl border bg-card p-4" aria-label={`Step ${index + 1}: ${step.id}`}>
-      <div className="mb-3 flex flex-wrap items-center gap-2">
+    <section className={compact ? "space-y-3" : "rounded-xl border bg-card p-4"} aria-label={`Step ${index + 1}: ${step.id}`}>
+      {!compact && <div className="mb-3 flex flex-wrap items-center gap-2">
         <span className="flex size-7 items-center justify-center rounded-md bg-muted text-xs font-semibold tabular-nums">{index + 1}</span>
         <Meta.icon className="size-4 text-muted-foreground" aria-hidden />
         <span className="font-medium">{Meta.label}</span>
         <span className="text-xs text-muted-foreground">{Meta.help}</span>
         <div className="ml-auto flex gap-1">
-          <Button type="button" variant="ghost" size="icon" disabled={index === 0} onClick={() => onMove(-1)} aria-label="Move up"><ArrowUp className="size-4" /></Button>
-          <Button type="button" variant="ghost" size="icon" disabled={index === count - 1} onClick={() => onMove(1)} aria-label="Move down"><ArrowDown className="size-4" /></Button>
+          <Button type="button" variant="ghost" size="icon" disabled={index === 0} onClick={() => onMove?.(-1)} aria-label="Move up"><ArrowUp className="size-4" /></Button>
+          <Button type="button" variant="ghost" size="icon" disabled={index === count - 1} onClick={() => onMove?.(1)} aria-label="Move down"><ArrowDown className="size-4" /></Button>
           <Button type="button" variant="ghost" size="icon" onClick={onRemove} aria-label={`Remove step ${step.id}`}><Trash2 className="size-4" /></Button>
         </div>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2">
+      </div>}
+      <div className={compact ? "grid gap-3" : "grid gap-3 sm:grid-cols-2"}>
         <div className="space-y-1.5">
           <Label htmlFor={`${p}-id`}>Step id</Label>
           <Input id={`${p}-id`} className="font-mono text-sm" value={step.id} onChange={(e) => set({ id: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "_") })} />
@@ -88,9 +94,9 @@ export function StepEditor({ step, index, count, ids, agents, tools, kbs, onChan
           <Input id={`${p}-name`} value={step.name} placeholder={Meta.label} onChange={(e) => set({ name: e.target.value })} />
         </div>
 
-        {step.type === "agent" && (
+        {isAgentLike && (
           <>
-            <div className="space-y-1.5">
+            <div className={compact ? "space-y-1.5 sm:col-span-2" : "space-y-1.5"}>
               <Label htmlFor={`${p}-agent`}>Agent (published version runs)</Label>
               <select id={`${p}-agent`} className={selectCls} value={step.agent_id ?? ""} onChange={(e) => set({ agent_id: e.target.value || null })}>
                 <option value="">Select an agent…</option>
@@ -98,9 +104,45 @@ export function StepEditor({ step, index, count, ids, agents, tools, kbs, onChan
               </select>
             </div>
             <div className="space-y-1.5 sm:col-span-2">
-              <Label htmlFor={`${p}-msg`}>Message sent to the agent</Label>
+              <Label htmlFor={`${p}-role`}>Role on the team</Label>
+              <Textarea id={`${p}-role`} rows={2} value={step.role} placeholder={step.type === "supervisor" ? "e.g. Leads the backend team and integrates its work" : "e.g. Writes the React components and styles"} onChange={(e) => set({ role: e.target.value })} />
+              <p className="text-xs text-muted-foreground">Shown to this member&apos;s supervisor so it knows what to delegate here. Empty uses the agent&apos;s description.</p>
+            </div>
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label htmlFor={`${p}-msg`}>{step.type === "supervisor" ? "Project brief given to the supervisor" : "Message sent to the agent (when it runs in the main flow)"}</Label>
               <Textarea id={`${p}-msg`} rows={3} className="font-mono text-xs" value={step.message} onChange={(e) => set({ message: e.target.value })} />
             </div>
+          </>
+        )}
+
+        {step.type === "supervisor" && (
+          <>
+            <div className="grid grid-cols-2 gap-2 sm:col-span-2">
+              <div className="space-y-1.5">
+                <Label htmlFor={`${p}-rounds`}>Rounds (plan → delegate → review)</Label>
+                <Input id={`${p}-rounds`} type="number" min={1} max={10} value={step.max_rounds} onChange={(e) => set({ max_rounds: Math.max(1, Math.min(10, Number(e.target.value) || 1)) })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor={`${p}-par`}>Members working at once</Label>
+                <Input id={`${p}-par`} type="number" min={1} max={50} value={step.parallelism} onChange={(e) => set({ parallelism: Math.max(1, Math.min(50, Number(e.target.value) || 1)) })} />
+              </div>
+            </div>
+            {!compact && (
+              <fieldset className="space-y-1.5 sm:col-span-2">
+                <legend className="text-sm font-medium">Team members</legend>
+                {candidates.length === 0 && <p className="text-sm text-muted-foreground">Add agent steps first; then tick the ones this supervisor leads.</p>}
+                <div className="flex flex-wrap gap-3">
+                  {candidates.map((c) => (
+                    <label key={c.id} className="flex items-center gap-1.5 text-sm">
+                      <input type="checkbox" className="size-4" checked={step.delegates.includes(c.id)}
+                        onChange={(e) => set({ delegates: e.target.checked ? [...step.delegates, c.id] : step.delegates.filter((x) => x !== c.id) })} />
+                      <span className="font-mono text-xs">{c.id}</span> {c.name}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+            )}
+            {compact && <p className="text-xs text-muted-foreground">Drag from the violet handle at the bottom of this node to an agent to add it to the team.</p>}
           </>
         )}
 
@@ -172,12 +214,12 @@ export function StepEditor({ step, index, count, ids, agents, tools, kbs, onChan
               <input type="checkbox" className="size-4" checked={step.condition.case_sensitive} onChange={(e) => set({ condition: { ...step.condition!, case_sensitive: e.target.checked } })} /> Case sensitive
             </label>
             <div />
-            <RouteSelect id={`${p}-true`} label="If true, go to" value={step.on_true} onChange={(v) => set({ on_true: v })} ids={others} fallback="the next step" />
-            <RouteSelect id={`${p}-false`} label="If false, go to" value={step.on_false} onChange={(v) => set({ on_false: v })} ids={others} fallback="the next step" />
+            {!compact && <RouteSelect id={`${p}-true`} label="If true, go to" value={step.on_true} onChange={(v) => set({ on_true: v })} ids={others} fallback="the next step" />}
+            {!compact && <RouteSelect id={`${p}-false`} label="If false, go to" value={step.on_false} onChange={(v) => set({ on_false: v })} ids={others} fallback="the next step" />}
           </>
         )}
 
-        {step.type !== "condition" && (
+        {step.type !== "condition" && !compact && (
           <RouteSelect id={`${p}-next`} label="Then go to" value={step.next} onChange={(v) => set({ next: v })} ids={others} fallback="the next step" />
         )}
       </div>

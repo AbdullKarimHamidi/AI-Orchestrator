@@ -85,7 +85,9 @@ test("enterprise journey (demo mode)", async ({ page }) => {
 
   await test.step("6–7. user builds a workflow around the published agent and runs it", async () => {
     await page.goto("/workflows/new")
+    await page.getByRole("radio", { name: /Simple flow/ }).click()
     await page.getByLabel("Name", { exact: true }).fill(`${agentName} pipeline`)
+    await page.getByRole("button", { name: "List", exact: true }).click()
     await page.locator("#step-0-agent").selectOption(agentId)
     await page.getByRole("button", { name: "Create workflow" }).click()
     await expect(page).toHaveURL(/\/workflows\/wfl_/)

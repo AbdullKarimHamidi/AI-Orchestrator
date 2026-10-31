@@ -23,7 +23,8 @@ User guide (PDF): [`docs/user-guide.pdf`](docs/user-guide.pdf) · Architecture: 
 | Production: HTTPS via Caddy, health checks, backups/restore, CI (lint, tests, build, browser E2E) | Implemented |
 | Tools: HTTP API tools and tools imported from remote MCP servers (Streamable HTTP), encrypted credentials, schema-validated calls, SSRF guard, test console, per-agent allowlist, tool calling on OpenAI, Anthropic and Gemini | Implemented |
 | Knowledge (RAG): knowledge bases, upload PDF/DOCX/Markdown/HTML/CSV/JSON/text or paste text, background ingestion in the worker, OpenAI/Gemini/compatible embeddings or a built-in lexical index, search test, retrieved passages cited in run output | Implemented (in-process vector search; fine up to ~100k chunks per knowledge base) |
-| Workflows: step editor (agent, tool, knowledge search, transform, condition with true/false routes), strict `{{ templates }}`, loop guard, draft → publish immutable versions, archive, runs in the worker with per-step events, `POST /workflows/{id}/runs` | Implemented (linear steps with routing; no parallel branches or human approval yet) |
+| Workflows: node-based canvas editor (drag nodes, connect handles) plus list and JSON views; steps for agent, supervisor, tool, knowledge search, transform, condition with true/false routes; strict `{{ templates }}`, loop guard, draft → publish immutable versions, archive, runs in the worker with per-step events, `POST /workflows/{id}/runs` | Implemented (no human approval step yet) |
+| Agent teams: supervisor nodes lead teams of agents. Each round the supervisor plans, delegates tasks to its members (run in parallel, up to 50 at once), reviews their results, then delegates follow-ups or delivers the final result. Members can be supervisors with their own sub-teams (director → team leads → tens of agents). "Build team workflow" turns a Project Creator project into such a team | Implemented |
 | Evaluations: datasets of cases (editor + bulk import), evaluation runs of a published or draft agent, scorers (contains, exact, regex, JSON valid, not empty), live pass rate, case-by-case comparison of two runs | Implemented |
 | Memory: per-agent memories in a global or per-end-user scope, optional TTL, injection into the prompt, automatic saving of conversations, "forget this scope" deletion requests | Implemented |
 | Billing: plans with seat and monthly run quotas enforced by the API, monthly usage statements (plan fee + model spend) with CSV export | Implemented (internal chargeback; no payment processor) |
@@ -61,13 +62,21 @@ for free, connect one or more free AI APIs, either in `.env` (applies to every w
 | Cerebras | <https://cloud.cerebras.ai/> | `CEREBRAS_API_KEY` | gpt-oss-120b, llama3.1-8b |
 | OpenRouter | <https://openrouter.ai/keys> | `OPENROUTER_API_KEY` | Only models ending in `:free` are free |
 | Mistral | <https://console.mistral.ai/api-keys> | `MISTRAL_API_KEY` | Free "Experiment" plan |
-| Ollama (local) | <https://ollama.com/download> | `OLLAMA_BASE_URL` | No key, no limits; `ollama pull llama3.2` first |
+| Ollama (local) | <https://ollama.com/download> | `OLLAMA_BASE_URL` | No key, no limits; `ollama pull llama3.2` first. Use `http://localhost:11434` (from Docker: `http://host.docker.internal:11434` with Ollama started as `OLLAMA_HOST=0.0.0.0 ollama serve`). Connecting lists the models you have pulled |
 
 Then click **Agents → Install starter agents**: the agents move onto your best connected provider (Groq, then
 Gemini, Cerebras, OpenRouter, Mistral, Ollama) with the others as automatic fallbacks, so a free tier hitting
 its rate limit does not stop a run. Agents you have edited are left alone. For existing installs,
 `python -m app.cli setup-free` does the same for every workspace. Free model lineups change; **Test connection**
 on a provider shows the models your key can use today.
+### Agent teams on the canvas
+
+**Workflows → New workflow → Agent organisation** opens a ready-made team on the canvas: a director supervisor, two
+team-lead supervisors and six agents. Click a node to pick its agent and describe its role; drag from a supervisor's
+violet bottom handle to an agent's top handle to add it to the team; connect right handles to left handles for the
+order of the main flow. **Team template** in the node palette drops a supervisor with four connected agents. The
+same agent can sit in several nodes with different roles, so a few agents can staff a team of dozens.
+
 API docs (Swagger) are at <http://localhost:8000/api/docs>.
 
 Database: the project uses MongoDB Atlas. Set `MONGODB_URI` (and `MONGODB_DB=AI`) in `.env`; with Docker, set

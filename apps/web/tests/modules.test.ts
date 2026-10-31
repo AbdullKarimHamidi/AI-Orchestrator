@@ -7,7 +7,7 @@ import { workflowDefinitionSchema } from "@/lib/schemas"
 describe("workflow steps", () => {
   it("flags missing references before saving", () => {
     const agent = newStep("agent", [])
-    const def = { steps: [agent, { ...newStep("transform", [agent]), next: "nowhere" }], max_step_executions: 50 }
+    const def = { steps: [agent, { ...newStep("transform", [agent]), next: "nowhere" }], max_step_executions: 50, max_delegations: 200 }
     const problems = problemsOf(def)
     expect(problems.some((p) => p.includes("choose an agent"))).toBe(true)
     expect(problems.some((p) => p.includes('missing step "nowhere"'))).toBe(true)
@@ -17,7 +17,7 @@ describe("workflow steps", () => {
   it("describes routes, including condition branches and the implicit next step", () => {
     const c = { ...newStep("condition", []), id: "check", on_true: "end" }
     const t = { ...newStep("transform", [c]), id: "fmt" }
-    const def = { steps: [c, t], max_step_executions: 50 }
+    const def = { steps: [c, t], max_step_executions: 50, max_delegations: 200 }
     expect(edgesOf(def, 0)).toEqual([{ label: "true", target: "end" }, { label: "false", target: "fmt" }])
     expect(edgesOf(def, 1)).toEqual([{ label: "next", target: "end" }])
     expect(workflowDefinitionSchema.safeParse(def).success).toBe(true)

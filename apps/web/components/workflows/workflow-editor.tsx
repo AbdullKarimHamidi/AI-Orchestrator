@@ -13,6 +13,7 @@ import { useAgents, useKnowledgeBases, useTools } from "@/hooks/use-api"
 import { workflowDefinitionSchema, type StepType, type WorkflowDefinition } from "@/lib/schemas"
 import { useWorkspaceCtx } from "@/lib/workspace-context"
 
+import { AgentCanvas } from "./canvas/agent-canvas"
 import { StepEditor } from "./step-editor"
 import { newStep, problemsOf, STEP_TYPES } from "./steps"
 import { WorkflowDiagram } from "./workflow-diagram"
@@ -32,7 +33,7 @@ export function WorkflowEditor({ initial, submitLabel, onSubmit }: { initial: Wo
   const [description, setDescription] = useState(initial.description)
   const [def, setDef] = useState<WorkflowDefinition>(initial.definition)
   const [addType, setAddType] = useState<StepType>("agent")
-  const [mode, setMode] = useState<"visual" | "json">("visual")
+  const [mode, setMode] = useState<"canvas" | "visual" | "json">("canvas")
   const [json, setJson] = useState("")
   const [jsonError, setJsonError] = useState<string | null>(null)
   const [serverError, setServerError] = useState<string | null>(null)
@@ -78,7 +79,7 @@ export function WorkflowEditor({ initial, submitLabel, onSubmit }: { initial: Wo
   }
 
   return (
-    <form onSubmit={submit} className="grid gap-6 xl:grid-cols-[1fr_360px]" noValidate>
+    <form onSubmit={submit} className={mode === "canvas" ? "grid gap-6" : "grid gap-6 xl:grid-cols-[1fr_360px]"} noValidate>
       <div className="min-w-0 space-y-4">
         {serverError && <Alert variant="destructive" role="alert"><AlertDescription>{serverError}</AlertDescription></Alert>}
         <Card>
@@ -92,6 +93,12 @@ export function WorkflowEditor({ initial, submitLabel, onSubmit }: { initial: Wo
               <Label htmlFor="wf-max">Loop guard (max step executions)</Label>
               <Input id="wf-max" type="number" min={1} max={500} value={def.max_step_executions} onChange={(e) => setDef({ ...def, max_step_executions: Math.max(1, Math.min(500, Number(e.target.value) || 1)) })} />
             </div>
+            {def.steps.some((s) => s.type === "supervisor") && (
+              <div className="space-y-1.5">
+                <Label htmlFor="wf-deleg">Max tasks delegated per run (all supervisors)</Label>
+                <Input id="wf-deleg" type="number" min={1} max={2000} value={def.max_delegations} onChange={(e) => setDef({ ...def, max_delegations: Math.max(1, Math.min(2000, Number(e.target.value) || 1)) })} />
+              </div>
+            )}
             <div className="space-y-1.5 sm:col-span-2">
               <Label htmlFor="wf-desc">Description</Label>
               <Textarea id="wf-desc" rows={2} value={description} onChange={(e) => setDescription(e.target.value)} />
@@ -102,7 +109,7 @@ export function WorkflowEditor({ initial, submitLabel, onSubmit }: { initial: Wo
         <div className="flex flex-wrap items-center gap-2">
           <h2 className="mr-auto text-lg font-semibold">Steps</h2>
           <div className="inline-flex rounded-md border p-0.5" role="group" aria-label="Editor mode">
-            {(["visual", "json"] as const).map((m) => (
+            {(["canvas", "visual", "json"] as const).map((m) => (
               <button key={m} type="button" aria-pressed={mode === m}
                 className={`rounded px-2.5 py-1 text-sm ${mode === m ? "bg-accent font-medium" : "text-muted-foreground"}`}
                 onClick={() => {
@@ -110,13 +117,22 @@ export function WorkflowEditor({ initial, submitLabel, onSubmit }: { initial: Wo
                   setJsonError(null)
                   setMode(m)
                 }}>
-                {m === "visual" ? "Visual" : "JSON"}
+                {m === "canvas" ? "Canvas" : m === "visual" ? "List" : "JSON"}
               </button>
             ))}
           </div>
         </div>
 
-        {mode === "json" ? (
+        {mode === "canvas" ? (
+          <>
+            <AgentCanvas definition={def} onChange={setDef} agents={agents.data?.items ?? []} tools={tools.data ?? []} kbs={kbs.data ?? []} />
+            <p className="text-xs text-muted-foreground">
+              Connect <strong>Start</strong> to the first node and each node&apos;s right handle to the next. To build a team, drag from a
+              supervisor&apos;s violet bottom handle to an agent&apos;s top handle; a member can be a supervisor too, leading its own sub-team.
+              Templates: <code>{"{{ input.message }}"}</code>, <code>{"{{ steps.<id>.text }}"}</code>, <code>{"{{ last.text }}"}</code>.
+            </p>
+          </>
+        ) : mode === "json" ? (
           <Card>
             <CardContent className="space-y-2 pt-4">
               <Label htmlFor="wf-json" className="sr-only">Definition JSON</Label>
@@ -138,7 +154,7 @@ export function WorkflowEditor({ initial, submitLabel, onSubmit }: { initial: Wo
         ) : (
           <>
             {def.steps.map((s, i) => (
-              <StepEditor key={i} step={s} index={i} count={def.steps.length} ids={ids}
+              <StepEditor key={i} step={s} index={i} count={def.steps.length} ids={ids} steps={def.steps}
                 agents={agents.data?.items ?? []} tools={tools.data ?? []} kbs={kbs.data ?? []}
                 onChange={(x) => update(i, x)} onMove={(d) => move(i, d)}
                 onRemove={() => setDef({ ...def, steps: def.steps.filter((_, j) => j !== i) })} />
@@ -162,14 +178,15 @@ export function WorkflowEditor({ initial, submitLabel, onSubmit }: { initial: Wo
         )}
       </div>
 
-      <div className="space-y-4 xl:sticky xl:top-4 xl:self-start">
-        <Card>
+      <div className={mode === "canvas" ? "grid gap-4 md:grid-cols-[1fr_280px] md:items-start" : "space-y-4 xl:sticky xl:top-4 xl:self-start"}>
+        {mode !== "canvas" && <Card>
           <CardHeader>
             <CardTitle>Flow preview</CardTitle>
             <CardDescription>Steps run top to bottom unless a route says otherwise.</CardDescription>
           </CardHeader>
           <CardContent><WorkflowDiagram definition={def} names={names} /></CardContent>
-        </Card>
+        </Card>}
+        {mode === "canvas" && problems.length === 0 && <div />}
         {problems.length > 0 && (
           <Alert>
             <AlertTitle>Fix before saving</AlertTitle>

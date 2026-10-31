@@ -9,7 +9,9 @@ function detail(def: WorkflowDefinition, i: number, names: Record<string, string
   const s = def.steps[i]
   switch (s.type) {
     case "agent":
-      return `${names[s.agent_id ?? ""] ?? s.agent_id ?? "no agent"} ← ${s.message}`
+      return `${names[s.agent_id ?? ""] ?? s.agent_id ?? "no agent"} ← ${s.role || s.message}`
+    case "supervisor":
+      return `${names[s.agent_id ?? ""] ?? s.agent_id ?? "no agent"} leads ${s.delegates.length} · up to ${s.max_rounds} rounds`
     case "tool":
       return `${names[s.tool_id ?? ""] ?? s.tool_id ?? "no tool"}(${Object.keys(s.arguments).join(", ")})`
     case "knowledge":

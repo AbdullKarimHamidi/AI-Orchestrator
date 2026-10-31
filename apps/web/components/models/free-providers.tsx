@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { useProviderMutations } from "@/hooks/use-api"
+import { useAgentMutations, useProviderMutations } from "@/hooks/use-api"
 import { errorMessage } from "@/lib/api-client"
 import type { Preset } from "@/lib/schemas"
 
@@ -24,14 +24,32 @@ export function FreeProviders({ presets, workspaceId, canWrite }: { presets: Pre
 
 function PresetCard({ p, workspaceId, canWrite }: { p: Preset; workspaceId: string; canWrite: boolean }) {
   const m = useProviderMutations(workspaceId)
+  const agents = useAgentMutations(workspaceId)
   const [value, setValue] = useState(p.needs_key ? "" : p.base_url ?? "")
   const inputId = `preset-${p.id}`
 
+  async function moveStarterAgents() {
+    try {
+      const r = await agents.starterPack.mutateAsync()
+      toast.success(`Starter agents now use ${p.name}: ${r.created.length + r.updated.length} ready${r.skipped.length ? `, ${r.skipped.length} you edited were left alone` : ""}.`)
+    } catch (e) {
+      toast.error(errorMessage(e))
+    }
+  }
+
   async function add() {
     try {
-      await m.addPreset.mutateAsync(p.needs_key ? { id: p.id, api_key: value.trim() } : { id: p.id, base_url: value.trim() || undefined })
-      toast.success(`${p.name} is ready. Install the starter agents on the Agents page to use it.`)
+      const prov = await m.addPreset.mutateAsync(p.needs_key ? { id: p.id, api_key: value.trim() } : { id: p.id, base_url: value.trim() || undefined })
       setValue("")
+      if (prov.health.status === "unhealthy") {
+        toast.warning(`${p.name} was added but is not reachable yet: ${prov.health.error ?? "unknown error"}`, { duration: 15000 })
+        return
+      }
+      const models = prov.kind === "ollama" && prov.suggested_models.length ? ` Installed models: ${prov.suggested_models.slice(0, 4).join(", ")}.` : ""
+      toast.success(`${p.name} is connected.${models}`, {
+        duration: 12000,
+        action: { label: "Use for starter agents", onClick: () => void moveStarterAgents() },
+      })
     } catch (e) {
       toast.error(errorMessage(e))
     }
@@ -56,10 +74,10 @@ function PresetCard({ p, workspaceId, canWrite }: { p: Preset; workspaceId: stri
             <Label htmlFor={inputId}>{p.needs_key ? "API key" : "Ollama URL"}</Label>
             <div className="flex gap-2">
               <Input id={inputId} type={p.needs_key ? "password" : "url"} autoComplete="off" value={value}
-                placeholder={p.needs_key ? "Paste your key" : "http://host.docker.internal:11434/v1"} onChange={(e) => setValue(e.target.value)} />
+                placeholder={p.needs_key ? "Paste your key" : "http://localhost:11434"} onChange={(e) => setValue(e.target.value)} />
               <Button type="submit" size="sm" disabled={m.addPreset.isPending || (p.needs_key && !value.trim())}>Connect</Button>
             </div>
-            <p className="text-xs text-muted-foreground">{p.id === "ollama" ? "For Docker Desktop, use host.docker.internal and make sure Ollama accepts connections from Docker." : null} Or set <code>{p.env_var}</code> in .env to connect it for every workspace.</p>
+            <p className="text-xs text-muted-foreground">{p.id === "ollama" ? "Running the app with Docker? Use http://host.docker.internal:11434 and start Ollama with OLLAMA_HOST=0.0.0.0." : null} Or set <code>{p.env_var}</code> in .env to connect it for every workspace.</p>
           </form>
         )}
       </CardContent>

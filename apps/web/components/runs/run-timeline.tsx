@@ -20,6 +20,12 @@ const TONE: Record<string, string> = {
   "workflow.step.started": "border-indigo-400",
   "workflow.step.completed": "border-indigo-500",
   "workflow.step.failed": "border-red-500",
+  "team.started": "border-violet-500",
+  "team.plan": "border-violet-400",
+  "team.task.started": "border-sky-300",
+  "team.task.completed": "border-sky-500",
+  "team.task.failed": "border-red-500",
+  "team.completed": "border-violet-600",
 }
 
 function summary(e: RunEvent): string {
@@ -53,6 +59,22 @@ function summary(e: RunEvent): string {
       return `${d.step}: ${d.result !== undefined ? `condition ${d.result} · ` : ""}${d.duration_ms} ms → ${d.next}${d.preview ? ` · ${String(d.preview).slice(0, 160)}` : ""}`
     case "workflow.step.failed":
       return `${d.step}: ${d.error}`
+    case "team.started": {
+      const members = (d.members ?? []) as { name: string }[]
+      return `${d.lead} leads ${members.length}: ${members.map((m) => m.name).join(", ")}`
+    }
+    case "team.plan": {
+      const tasks = (d.tasks ?? []) as { to: string }[]
+      return `${d.step} round ${d.round}: ${tasks.length} task${tasks.length === 1 ? "" : "s"} → ${tasks.map((t) => t.to).join(", ")}${d.thoughts ? ` · ${String(d.thoughts).slice(0, 160)}` : ""}`
+    }
+    case "team.task.started":
+      return `${d.name ?? d.member} (round ${d.round}): ${String(d.task ?? "").slice(0, 160)}`
+    case "team.task.completed":
+      return `${d.member}: ${d.duration_ms} ms · ${String(d.preview ?? "").slice(0, 160)}`
+    case "team.task.failed":
+      return `${d.member}: ${d.code} — ${d.error}`
+    case "team.completed":
+      return `${d.step}: ${d.rounds} round${d.rounds === 1 ? "" : "s"}, ${d.tasks} task${d.tasks === 1 ? "" : "s"}${d.failed ? `, ${d.failed} failed` : ""}`
     case "run.queued":
       return d.steps !== undefined ? `workflow with ${d.steps} steps` : ""
     case "run.started":
