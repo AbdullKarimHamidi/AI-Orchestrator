@@ -17,6 +17,9 @@ class SpecialistTeam(ApiModel):
     responsibility: str = Field(min_length=1, max_length=1000)
     agent_ids: list[str] = Field(default_factory=list, max_length=100)
     parallelism: int = Field(default=5, ge=1, le=100)
+    kind: Literal["ui", "backend", "database", "other"] = "other"
+    # Task coordinator: takes the main agent's tasks and hands them to this team's agents.
+    lead_agent_id: str | None = Field(default=None, max_length=64)
 
 
 class ProjectCreate(ApiModel):
@@ -28,6 +31,8 @@ class ProjectCreate(ApiModel):
     teams: list[SpecialistTeam] = Field(default_factory=list, max_length=30)
     # Provider and model the planning agents run on. None keeps each agent's own published model.
     planning_model: ModelRef | None = None
+    director_agent_id: str | None = Field(default=None, max_length=64)
+    reviewer_agent_ids: list[str] = Field(default_factory=list, max_length=5)
 
     @model_validator(mode="after")
     def unique_assignments(self):
@@ -52,6 +57,8 @@ class ProjectUpdate(ApiModel):
     teams: list[SpecialistTeam] | None = Field(default=None, max_length=30)
     planning_model: ModelRef | None = None
     clear_planning_model: bool = False  # True switches back to each agent's own model
+    director_agent_id: str | None = Field(default=None, max_length=64)
+    reviewer_agent_ids: list[str] | None = Field(default=None, max_length=5)
 
 
 class ProjectDocumentCreate(ApiModel):
@@ -95,6 +102,11 @@ class ProjectOut(OutModel):
     documents: list[ProjectDocumentOut]
     planning_runs: list[dict[str, Any]]
     planning_model: dict[str, Any] | None = None
+    director_agent_id: str | None = None
+    reviewer_agent_ids: list[str] = []
+    files: list[dict[str, Any]] = []
+    build_runs: list[dict[str, Any]] = []
+    build_workflow_id: str | None = None
     revision: int
     created_by: str
     created_at: datetime
@@ -112,3 +124,21 @@ class ProjectPlanStartOut(OutModel):
     project_id: str
     run_ids: list[str]
     message: str
+
+
+class ProjectBuildStart(ApiModel):
+    instructions: str = Field(default="", max_length=20000,
+                              description="Change request for this round; empty builds the plan")
+    planning_model: ModelRef | None = None
+
+
+class ProjectBuildStartOut(OutModel):
+    project_id: str
+    run_id: str
+    workflow_id: str
+    message: str
+
+
+class ProjectFileWrite(ApiModel):
+    path: str = Field(min_length=1, max_length=200)
+    content: str = Field(default="", max_length=200_000)

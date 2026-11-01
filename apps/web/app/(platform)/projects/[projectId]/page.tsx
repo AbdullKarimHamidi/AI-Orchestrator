@@ -1,9 +1,9 @@
 "use client"
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, Bot, CheckCircle2, Clock3, FileText, Network, Play, Save, Sparkles } from "lucide-react"
+import { ArrowLeft, Bot, CheckCircle2, Clock3, FileText, Hammer, Network, Play, Save, Sparkles, Users } from "lucide-react"
 import Link from "next/link"
-import { useParams, useRouter } from "next/navigation"
+import { useParams } from "next/navigation"
 import { useState } from "react"
 import { toast } from "sonner"
 
@@ -15,14 +15,22 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { projectTeamDefinition } from "@/components/workflows/canvas/graph"
-import { useProviders } from "@/hooks/use-api"
-import { useWorkflowMutations } from "@/hooks/use-modules"
+import { BuildTeamEditor } from "@/components/projects/build-team-editor"
+import { BuildWorkspace } from "@/components/projects/build-workspace"
+import { TeamFlow } from "@/components/projects/team-flow"
+import { useAgents, useProviders } from "@/hooks/use-api"
 import { api } from "@/lib/api-client"
 import { projectSchema, type ProjectDocument } from "@/lib/schemas/projects"
 import { useWorkspaceCtx } from "@/lib/workspace-context"
 import { cn } from "cn"
 
+type Tab = "plan" | "team" | "build" | "flow"
+const TABS: { id: Tab; label: string; icon: typeof FileText }[] = [
+  { id: "plan", label: "Plan", icon: FileText },
+  { id: "team", label: "Build team", icon: Users },
+  { id: "build", label: "Build & preview", icon: Hammer },
+  { id: "flow", label: "Agent flow", icon: Network },
+]
 const runStatusLabel: Record<string, string> = { queued: "Queued", running: "Running", completed: "Completed", failed: "Failed", cancelled: "Cancelled", timed_out: "Timed out", waiting_for_approval: "Needs approval" }
 
 export default function ProjectDetailPage() {
@@ -35,13 +43,18 @@ export default function ProjectDetailPage() {
   const [content, setContent] = useState<string | null>(null)
   const [feedback, setFeedback] = useState<string | null>(null)
   const [error, setError] = useState("")
+  const [tab, setTab] = useState<Tab>("plan")
+  const agentsQuery = useAgents(workspaceId)
+  const allAgents = agentsQuery.data?.items ?? []
+  const publishedAgents = allAgents.filter((a) => a.status === "published" && a.published_version).map((a) => ({ id: a.id, name: a.name }))
+  const agentNames = Object.fromEntries(allAgents.map((a) => [a.id, a.name]))
   const [planChoice, setPlanChoice] = useState<PlanningModel | null>(null)
   const providers = useProviders(workspaceId).data ?? []
   const project = useQuery({
     queryKey: ["project", workspaceId, projectId],
     queryFn: () => api.get(`/projects/${projectId}`, projectSchema),
     enabled: !!workspaceId && !!projectId,
-    refetchInterval: (q) => q.state.data?.planning_runs.some((r) => ["queued", "running"].includes(r.status)) ? 2000 : false,
+    refetchInterval: (q) => [...(q.state.data?.planning_runs ?? []), ...(q.state.data?.build_runs ?? [])].some((r) => ["queued", "running"].includes(r.status)) ? 2000 : false,
   })
   const data = project.data
   const selected = selectedId === "__new__" ? undefined : data?.documents.find((d) => d.id === selectedId) ?? data?.documents[0]
@@ -61,17 +74,6 @@ export default function ProjectDetailPage() {
     }),
     onSuccess: async () => { toast.success("Planning agents queued"); setError(""); setPlanChoice(null); await invalidate() },
     onError: (e) => setError(e instanceof Error ? e.message : "Could not start planning"),
-  })
-  const workflows = useWorkflowMutations(workspaceId)
-  const router = useRouter()
-  const buildTeam = useMutation({
-    mutationFn: async () => {
-      const definition = data ? projectTeamDefinition(data) : null
-      if (!definition) throw new Error("Add at least one supervisor or planning agent and one team agent first.")
-      return workflows.create.mutateAsync({ name: `${data!.name} team`.slice(0, 120), description: `Agent team for project ${data!.name}`, definition })
-    },
-    onSuccess: (w) => { toast.success("Team workflow created. Check the agents, then publish it."); router.push(`/workflows/${w.id}/edit`) },
-    onError: (e) => setError(e instanceof Error ? e.message : "Could not build the team workflow"),
   })
   const saveDoc = useMutation({
     mutationFn: (doc: ProjectDocument) => api.patch(`/projects/${projectId}/documents/${doc.id}`, projectSchema, {
@@ -99,6 +101,13 @@ export default function ProjectDetailPage() {
       <PageHeader title={data.name} description={data.description || data.idea.slice(0, 180)}
         actions={<Button variant="outline" onClick={() => updateProject.mutate("ready")} disabled={updateProject.isPending || data.documents.length === 0}><CheckCircle2 className="size-4" /> Mark plan ready</Button>} />
       {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
+      <div role="tablist" aria-label="Project sections" className="inline-flex flex-wrap gap-1 rounded-lg border bg-muted/40 p-1">
+        {TABS.map((t) => <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)} className={cn("flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm transition-colors", tab === t.id ? "bg-background font-medium shadow-sm" : "text-muted-foreground hover:text-foreground")}><t.icon className="size-4" />{t.label}</button>)}
+      </div>
+      {tab === "team" && <BuildTeamEditor key={data.revision} project={data} agents={publishedAgents} onSaved={async () => { await invalidate(); setTab("build") }} />}
+      {tab === "build" && <BuildWorkspace project={data} onChanged={invalidate} onShowFlow={() => setTab("flow")} />}
+      {tab === "flow" && <TeamFlow project={data} workspaceId={workspaceId} agentNames={agentNames} />}
+      {tab === "plan" && <>
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
           { label: "Planning agents", value: data.planning_agent_ids.length, icon: Bot },
@@ -146,9 +155,10 @@ export default function ProjectDetailPage() {
           <Card><CardHeader><CardTitle>Planning activity</CardTitle><CardDescription>Agent runs are queued independently and execute in the background.</CardDescription></CardHeader><CardContent className="space-y-3">
             {data.planning_runs.length === 0 ? <p className="text-sm text-muted-foreground">No planning runs yet.</p> : data.planning_runs.slice().reverse().map((run) => <div key={run.run_id} className="rounded-lg border p-3"><div className="flex items-start justify-between gap-2"><p className="text-sm font-medium">{run.agent_name}</p><span className="rounded-full border px-2 py-0.5 text-[11px]">{runStatusLabel[run.status] ?? run.status}</span></div><p className="mt-1 text-xs text-muted-foreground">{run.purpose}{run.model ? ` · ${run.model}` : ""}</p>{run.error != null && <p className="mt-2 text-xs text-destructive">{typeof run.error === "object" && run.error && "message" in run.error ? String((run.error as { message: unknown }).message) : String(typeof run.error === "object" ? JSON.stringify(run.error) : run.error)}</p>}{run.document_id && <p className="mt-2 text-xs text-emerald-600">Document created</p>}</div>)}
           </CardContent></Card>
-          <Card><CardHeader><CardTitle>Team configuration</CardTitle><CardDescription>Set up any number of agents after the plan is approved.</CardDescription></CardHeader><CardContent className="space-y-3">{data.teams.length === 0 ? <p className="text-sm text-muted-foreground">No specialist teams configured yet.</p> : data.teams.map((team) => <div key={team.id} className="rounded-lg border p-3"><p className="font-medium">{team.name}</p><p className="mt-1 text-xs text-muted-foreground">{team.responsibility}</p><p className="mt-2 text-xs">{team.agent_ids.length} agents · up to {team.parallelism} parallel tasks</p></div>)}<p className="text-xs text-muted-foreground">Turn this team into a runnable workflow: your supervisor agents lead, each team gets a lead, and the leads delegate tasks to the team&apos;s agents in parallel. You can rearrange it on the canvas before publishing.</p><Button variant="outline" onClick={() => buildTeam.mutate()} disabled={buildTeam.isPending}><Network className="size-4" /> {buildTeam.isPending ? "Building…" : "Build team workflow"}</Button></CardContent></Card>
+          <Card className="border-primary/40 bg-primary/5"><CardHeader><CardTitle>Turn the plan into a project</CardTitle><CardDescription>Approve the plan documents you want built, choose who builds what, then start the build. The teams work in parallel and you watch the preview.</CardDescription></CardHeader><CardContent className="flex flex-col gap-2"><Button onClick={() => setTab("team")}><Users className="size-4" /> 1. Set up the build team</Button><Button variant="outline" onClick={() => setTab("build")}><Hammer className="size-4" /> 2. Build and preview</Button></CardContent></Card>
         </aside>
       </div>
+      </>}
     </div>
   )
 }

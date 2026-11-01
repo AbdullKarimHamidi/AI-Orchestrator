@@ -15,6 +15,7 @@ from app.repositories.agents import AgentRepository
 from app.repositories.audit import AuditRepository
 from app.repositories.base import now
 from app.repositories.knowledge import KnowledgeBaseRepository
+from app.repositories.providers import ProviderRepository
 from app.repositories.runs import RunEventRepository, RunRepository
 from app.repositories.tools import ToolRepository
 from app.repositories.workflows import WorkflowRepository, WorkflowVersionRepository
@@ -32,6 +33,7 @@ class WorkflowService:
         self.agents = AgentRepository(db)
         self.tools = ToolRepository(db)
         self.kbs = KnowledgeBaseRepository(db)
+        self.providers = ProviderRepository(db)
         self.runs = RunRepository(db)
         self.events = RunEventRepository(db)
         self.audit = AuditRepository(db)
@@ -102,6 +104,12 @@ class WorkflowService:
                     problems.append(f"Step '{s['id']}': agent {s.get('agent_id')} not found")
                 elif a["status"] != "published" or not a.get("published_version"):
                     problems.append(f"Step '{s['id']}': agent '{a['name']}' is {a['status']}; publish it first")
+                if s.get("model"):
+                    p = await self.providers.get(ws_id, s["model"].get("provider_id") or "")
+                    if not p:
+                        problems.append(f"Step '{s['id']}': model provider {s['model'].get('provider_id')} not found")
+                    elif not p.get("enabled", True):
+                        problems.append(f"Step '{s['id']}': provider '{p['name']}' is disabled")
             elif s["type"] == "tool":
                 if not await self.tools.many(ws_id, [s.get("tool_id") or ""]):
                     problems.append(f"Step '{s['id']}': tool {s.get('tool_id')} not found")

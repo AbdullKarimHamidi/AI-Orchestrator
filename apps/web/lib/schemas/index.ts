@@ -337,6 +337,8 @@ export const workflowStepSchema = z.object({
   type: stepTypeSchema,
   name: z.string(),
   agent_id: z.string().nullable(),
+  // optional model override for agent/supervisor steps (null = the agent's own published model)
+  model: z.object({ provider_id: z.string(), model: z.string() }).nullable().optional(),
   message: z.string(),
   tool_id: z.string().nullable(),
   arguments: z.record(z.string(), z.unknown()),

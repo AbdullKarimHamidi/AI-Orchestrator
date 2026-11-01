@@ -214,6 +214,7 @@ interface ProjectLike {
   planning_agent_ids: string[]
   teams: { id: string; name: string; responsibility: string; agent_ids: string[]; parallelism: number }[]
   documents: { title: string; content: string; status: string }[]
+  planning_model?: { provider_id: string; model: string } | null
 }
 
 /** A team workflow for a Project Creator project: the first supervisor directs one lead per team
@@ -258,5 +259,9 @@ export function projectTeamDefinition(p: ProjectLike): WorkflowDefinition | null
     if (!lead.delegates.length) lead.type = "agent"
   }
   if (!director.delegates.length) return null
+  // The model chosen for the project (e.g. OpenRouter) runs every agent in the team, so the team
+  // does not fall back to whatever model each agent was last published with.
+  const pm = p.planning_model
+  if (pm?.provider_id) for (const s of steps) if (s.type === "agent" || s.type === "supervisor") s.model = { provider_id: pm.provider_id, model: pm.model }
   return { steps, max_step_executions: 50, max_delegations: 200 }
 }

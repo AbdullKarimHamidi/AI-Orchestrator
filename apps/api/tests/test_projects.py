@@ -128,3 +128,32 @@ async def test_planning_model_must_be_a_usable_workspace_provider(alice, bob):
         "name": "Bad provider", "idea": "Build something useful for testing",
         "planning_agent_ids": [agent["id"]], "planning_model": {"provider_id": other["id"], "model": "x"}})
     assert r.status_code == 422 and r.json()["error"]["code"] == "PROVIDER_NOT_FOUND"
+
+
+async def test_team_workflow_steps_run_on_the_project_model(alice, database):
+    """The team workflow built from a project uses the project's model, not the agents' published one."""
+    agent, gemini, openrouter = await _gemini_agent_edited_to_openrouter(alice)
+    model = {"provider_id": openrouter["id"], "model": "meta-llama/llama-3.3-70b-instruct:free"}
+    definition = {"steps": [
+        {"id": "director", "type": "supervisor", "agent_id": agent["id"], "delegates": ["builder"], "model": model,
+         "message": "Build the project", "next": "end"},
+        {"id": "builder", "type": "agent", "agent_id": agent["id"], "model": model},
+    ]}
+    wf = (await alice.post("/workflows", json={"name": "Project team", "definition": definition})).json()
+    assert wf["draft"]["steps"][0]["model"] == model
+    assert (await alice.post(f"/workflows/{wf['id']}/publish", json={"note": "v1"})).status_code == 200
+    run_id = (await alice.post(f"/workflows/{wf['id']}/runs", json={"input": {"message": "go"}})).json()["id"]
+    calls: list[str] = []
+    registry.test_transport = httpx.MockTransport(_provider_handler(calls))
+    try:
+        await _process_all(database, [run_id])
+    finally:
+        registry.test_transport = None
+    run = (await alice.get(f"/runs/{run_id}")).json()
+    assert run["status"] == "completed", run["error"]
+    assert calls and set(calls) == {"openrouter.ai"}
+
+    bad = definition | {"steps": [definition["steps"][1] | {"model": {"provider_id": "prv_missing", "model": "x"}}]}
+    wf2 = (await alice.post("/workflows", json={"name": "Bad model team", "definition": bad})).json()
+    r = await alice.post(f"/workflows/{wf2['id']}/publish", json={"note": "v1"})
+    assert r.status_code == 422 and "prv_missing" in r.text

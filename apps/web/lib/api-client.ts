@@ -47,7 +47,7 @@ export function getWorkspaceId(): string | null {
   return currentWorkspaceId
 }
 
-type Method = "GET" | "POST" | "PATCH" | "DELETE"
+type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
 
 interface RequestOptions {
   body?: unknown
@@ -110,6 +110,8 @@ export const api = {
     request("POST", path, schema, { ...opts, body: body ?? {} }),
   patch: <T>(path: string, schema: z.ZodType<T>, body: unknown, opts?: RequestOptions) =>
     request("PATCH", path, schema, { ...opts, body }),
+  put: <T>(path: string, schema: z.ZodType<T>, body: unknown, opts?: RequestOptions) =>
+    request("PUT", path, schema, { ...opts, body }),
   delete: (path: string, opts?: RequestOptions) => request<void>("DELETE", path, null, opts),
   upload: <T>(path: string, schema: z.ZodType<T>, form: FormData, opts?: RequestOptions) => request("POST", path, schema, { ...opts, form }),
 }

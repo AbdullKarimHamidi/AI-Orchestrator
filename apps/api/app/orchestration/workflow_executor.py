@@ -104,6 +104,13 @@ class WorkflowExecutor:
             raise RunFailure("VERSION_MISSING", f"published version of agent '{a['name']}' is missing")
         return a, v
 
+    @staticmethod
+    def _with_model(v: dict, step: dict) -> dict:
+        """The agent version a step runs: its own config, or the same config on the step's model."""
+        if not step.get("model"):
+            return v
+        return {**v, "config": {**v["config"], "model": step["model"], "fallbacks": []}}
+
     async def _run_agent(self, run: dict, a: dict, v: dict, message: str) -> tuple[dict, dict, bool]:
         ws = run["workspace_id"]
         sub_input = {"message": message, "variables": run["input"].get("variables", {})}
@@ -123,6 +130,7 @@ class WorkflowExecutor:
 
     async def _agent(self, run: dict, step: dict, ctx: dict) -> tuple[dict, dict, bool]:
         a, v = await self._load_agent(run["workspace_id"], step["agent_id"])
+        v = self._with_model(v, step)
         message = render(step.get("message") or "{{ input.message }}", ctx)
         if not message.strip():
             raise RunFailure("INVALID_INPUT", f"step '{step['id']}' rendered an empty message")
@@ -133,13 +141,14 @@ class WorkflowExecutor:
         """Plan → delegate (parallel) → review loop of one supervisor step. Returns the step output."""
         ws, run_id = run["workspace_id"], run["_id"]
         lead, lead_v = await self._load_agent(ws, step["agent_id"])
+        lead_v = self._with_model(lead_v, step)
         lead_name = step.get("name") or lead["name"]
         members: list[team.Member] = []
         loaded: dict[str, tuple[dict, dict]] = {}
         for mid in step.get("delegates") or []:
             m = by_id[mid]
             a, v = await self._load_agent(ws, m["agent_id"])
-            loaded[mid] = (a, v)
+            loaded[mid] = (a, self._with_model(v, m))
             members.append(team.Member(id=mid, name=m.get("name") or a["name"],
                                        role=m.get("role") or a.get("description") or "",
                                        leads_team=m["type"] == "supervisor"))

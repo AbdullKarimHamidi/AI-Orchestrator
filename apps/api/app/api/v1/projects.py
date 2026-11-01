@@ -4,9 +4,12 @@ from pymongo.asynchronous.database import AsyncDatabase
 from app.api.deps import Ctx, db_dep, require
 from app.schemas.common import Page
 from app.schemas.projects import (
+    ProjectBuildStart,
+    ProjectBuildStartOut,
     ProjectCreate,
     ProjectDocumentCreate,
     ProjectDocumentUpdate,
+    ProjectFileWrite,
     ProjectOut,
     ProjectPlanStart,
     ProjectPlanStartOut,
@@ -71,3 +74,24 @@ async def start_planning(project_id: str, body: ProjectPlanStart, ctx: Ctx = Dep
     result = await svc.start_planning(ctx.workspace_id, ctx.user_id, ctx.role, project_id,
                                       body.feedback, body.document_ids, body.planning_model)
     return result
+
+
+@router.post("/{project_id}/build", response_model=ProjectBuildStartOut, status_code=202)
+async def start_build(project_id: str, body: ProjectBuildStart, ctx: Ctx = Depends(require("runs:create")),
+                      db: AsyncDatabase = Depends(db_dep)):
+    """Runs the project's build team: the main agent, task coordinators, teams and plan reviewers."""
+    return await ProjectService(db).start_build(ctx.workspace_id, ctx.user_id, ctx.role, project_id, body)
+
+
+@router.put("/{project_id}/files", response_model=ProjectOut)
+async def write_file(project_id: str, body: ProjectFileWrite, ctx: Ctx = Depends(require("agents:write")),
+                     db: AsyncDatabase = Depends(db_dep)):
+    svc = ProjectService(db)
+    return svc.present(await svc.write_file(ctx.workspace_id, ctx.user_id, project_id, body))
+
+
+@router.delete("/{project_id}/files", response_model=ProjectOut)
+async def delete_file(project_id: str, path: str = Query(min_length=1, max_length=200),
+                      ctx: Ctx = Depends(require("agents:write")), db: AsyncDatabase = Depends(db_dep)):
+    svc = ProjectService(db)
+    return svc.present(await svc.delete_file(ctx.workspace_id, ctx.user_id, project_id, path))

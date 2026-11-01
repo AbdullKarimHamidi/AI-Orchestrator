@@ -3,6 +3,7 @@ from typing import Any, Literal
 
 from pydantic import Field, model_validator
 
+from app.schemas.agents import ModelRef
 from app.schemas.common import ApiModel, OutModel
 
 WorkflowStatus = Literal["draft", "published", "archived"]
@@ -40,6 +41,8 @@ class WorkflowStep(ApiModel):
     name: str = Field(default="", max_length=120)
     # agent / supervisor
     agent_id: str | None = Field(default=None, max_length=64)
+    # Agent/supervisor steps: answer on this model instead of the agent's published model and fallbacks.
+    model: ModelRef | None = None
     message: str = Field(default="{{ input.message }}", max_length=20_000)
     role: str = Field(default="", max_length=1000,
                       description="What this member is responsible for; shown to its supervisor")

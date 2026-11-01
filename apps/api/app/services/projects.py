@@ -13,15 +13,25 @@ from pymongo.errors import DuplicateKeyError
 
 from app.core.exceptions import Conflict, NotFound, Unprocessable
 from app.core.ids import new_id
+from app.orchestration import project_build
 from app.repositories.agents import AgentRepository
 from app.repositories.audit import AuditRepository
 from app.repositories.base import now
 from app.repositories.projects import ProjectRepository
 from app.repositories.providers import ProviderRepository
 from app.repositories.runs import RunRepository
-from app.schemas.projects import ProjectCreate, ProjectDocumentCreate, ProjectDocumentUpdate, ProjectUpdate
-from app.schemas.runs import RunCreate
+from app.schemas.projects import (
+    ProjectBuildStart,
+    ProjectCreate,
+    ProjectDocumentCreate,
+    ProjectDocumentUpdate,
+    ProjectFileWrite,
+    ProjectUpdate,
+)
+from app.schemas.runs import TERMINAL, RunCreate
+from app.schemas.workflows import WorkflowCreate, WorkflowDefinition, WorkflowRunCreate, WorkflowUpdate
 from app.services.runs import RunService
+from app.services.workflows import WorkflowService
 
 
 class ProjectService:
@@ -81,6 +91,8 @@ class ProjectService:
             if run and run.get("error") and item.get("error") != run["error"]:
                 item["error"] = run["error"]
                 changed = True
+        if await self._sync_builds(ws_id, project):
+            changed = True
         if changed:
             # A compare-and-swap prevents concurrent polling requests from persisting duplicate
             # documents or overwriting a user's project edits.
@@ -94,6 +106,7 @@ class ProjectService:
                 {"_id": project_id, "workspace_id": ws_id, "revision": project["revision"]},
                 {"$set": {"planning_runs": project.get("planning_runs", []),
                           "documents": project.get("documents", []), "status": project.get("status"),
+                          "build_runs": project.get("build_runs", []), "files": project.get("files", []),
                           "updated_at": now()}, "$inc": {"revision": 1}})
             if saved.modified_count != 1:
                 latest = await self.projects.get(ws_id, project_id)
@@ -103,13 +116,155 @@ class ProjectService:
                 project["revision"] += 1
         return project
 
+    async def _sync_builds(self, ws_id: str, project: dict) -> bool:
+        """Copies build-run progress onto the project; a completed run's files are merged in."""
+        changed = False
+        for item in project.get("build_runs", []):
+            if item.get("status") in TERMINAL:
+                continue
+            run = await self.runs.get(ws_id, item["run_id"])
+            if not run or run["status"] == item.get("status"):
+                continue
+            item["status"] = run["status"]
+            item["updated_at"] = now()
+            item["error"] = run.get("error")
+            changed = True
+            if run["status"] == "completed":
+                output = run.get("output") or {}
+                written = project_build.files_from_output(output, project_build.file_steps(run.get("config") or {}))
+                by_path = {f["path"]: f for f in project.get("files", [])}
+                for path, content in written.items():
+                    by_path[path] = {"path": path, "content": content, "updated_at": now(),
+                                     "updated_by": "agents", "round": item.get("round")}
+                project["files"] = sorted(by_path.values(), key=lambda f: f["path"])[:project_build.MAX_FILES]
+                steps = output.get("steps") or {}
+                review = (steps.get("plan_check") or {}).get("text") or ""
+                item["files_written"] = sorted(written)
+                item["summary"] = str((steps.get("director") or {}).get("text") or output.get("text") or "")[:4000]
+                item["review"] = review[:8000]
+                item["verdict"] = ("complete" if "VERDICT: COMPLETE" in review.upper() else
+                                   "incomplete" if "VERDICT: INCOMPLETE" in review.upper() else None)
+                if project.get("status") in ("ready", "planning", "blocked"):
+                    project["status"] = "in_progress"
+                if item["verdict"] == "complete":
+                    project["status"] = "completed"
+        return changed
+
+    async def start_build(self, ws_id: str, user_id: str, role: str, project_id: str,
+                          req: ProjectBuildStart) -> dict:
+        """Builds (or rebuilds) the project's team workflow from its build team and runs it."""
+        from app.services.rbac import has_permission
+        if not has_permission(role, "runs:create") or not has_permission(role, "agents:write"):
+            from app.core.exceptions import Forbidden
+            raise Forbidden("Starting a build needs permission to create workflows and runs")
+        project = await self.get(ws_id, project_id)
+        if any(b.get("status") not in TERMINAL for b in project.get("build_runs", [])):
+            raise Conflict("A build round is still running. Wait for it or cancel it first.", code="BUILD_RUNNING")
+        if req.planning_model is not None:
+            project["planning_model"] = await self._planning_model(ws_id, req.planning_model)
+        elif project.get("planning_model"):
+            from app.schemas.agents import ModelRef
+            pm = project["planning_model"]
+            project["planning_model"] = await self._planning_model(
+                ws_id, ModelRef(provider_id=pm["provider_id"], model=pm["model"]))
+        team_agents = [a for t in project.get("teams", []) for a in [*t.get("agent_ids", []), t.get("lead_agent_id")]]
+        await self._require_published(ws_id, [project.get("director_agent_id"), *team_agents,
+                                              *project.get("reviewer_agent_ids", [])])
+        names = {a["_id"]: a["name"] for a in [await self.agents.get(ws_id, x) for x in set(filter(None, team_agents))]
+                 if a}
+        try:
+            raw = project_build.build_definition(project, names)
+            definition = WorkflowDefinition.model_validate(raw)
+        except ValueError as exc:
+            raise Unprocessable(str(exc).splitlines()[-1] if "validation error" in str(exc) else str(exc),
+                                code="BUILD_TEAM_INVALID") from exc
+
+        wf_svc = WorkflowService(self.db)
+        wf = None
+        if project.get("build_workflow_id"):
+            try:
+                wf = await wf_svc.get(ws_id, project["build_workflow_id"])
+            except NotFound:
+                wf = None
+        if wf is None or wf.get("deleted"):
+            wf = await wf_svc.create(ws_id, user_id, WorkflowCreate(
+                name=f"{project['name']} build team"[:120], description=f"Build team for project {project['name']}",
+                definition=definition))
+        else:
+            wf = await wf_svc.update(ws_id, user_id, wf["_id"], WorkflowUpdate(revision=wf["revision"],
+                                                                               definition=definition))
+        try:
+            await wf_svc.publish(ws_id, user_id, wf["_id"], "Project build")
+        except Conflict as exc:
+            if exc.code != "NO_CHANGES":
+                raise
+        files = {f["path"]: f["content"] for f in project.get("files", [])}
+        brief = project_build.build_brief(project, files, req.instructions)
+        run, _ = await wf_svc.create_run(ws_id, user_id, role, wf["_id"], WorkflowRunCreate(
+            input={"message": brief[:100_000], "variables": {"project_id": project_id}}), None)
+        n = len(project.get("build_runs", [])) + 1
+        item = {"run_id": run["_id"], "workflow_id": wf["_id"], "round": n, "status": run["status"],
+                "instructions": req.instructions[:4000], "files_written": [], "summary": "", "review": "",
+                "verdict": None, "error": None, "created_at": now(), "updated_at": now()}
+        updates: dict[str, Any] = {"build_workflow_id": wf["_id"], "status": "in_progress", "updated_at": now()}
+        if req.planning_model is not None:
+            updates["planning_model"] = project["planning_model"]
+        await self.projects.col.update_one({"_id": project_id, "workspace_id": ws_id},
+                                           {"$push": {"build_runs": item}, "$set": updates, "$inc": {"revision": 1}})
+        await self.audit.record(ws_id, user_id, "project.build.start", "project", project_id,
+                                {"run_id": run["_id"], "workflow_id": wf["_id"]})
+        return {"project_id": project_id, "run_id": run["_id"], "workflow_id": wf["_id"],
+                "message": f"Build round {n} started: the teams are working in parallel."}
+
+    async def write_file(self, ws_id: str, user_id: str, project_id: str, req: ProjectFileWrite) -> dict:
+        path = project_build.clean_path(req.path)
+        if not path:
+            raise Unprocessable("Use a relative path made of letters, numbers, '-', '_', '.' and '/'",
+                                code="INVALID_PATH")
+        project = await self.get(ws_id, project_id)
+        files = [f for f in project.get("files", []) if f["path"] != path]
+        if len(files) >= project_build.MAX_FILES:
+            raise Unprocessable("This project already has the maximum number of files", code="TOO_MANY_FILES")
+        files.append({"path": path, "content": req.content, "updated_at": now(), "updated_by": user_id,
+                      "round": None})
+        await self._save_files(ws_id, project, sorted(files, key=lambda f: f["path"]))
+        await self.audit.record(ws_id, user_id, "project.file.write", "project", project_id, {"path": path})
+        return await self.get(ws_id, project_id)
+
+    async def delete_file(self, ws_id: str, user_id: str, project_id: str, path: str) -> dict:
+        project = await self.get(ws_id, project_id)
+        files = [f for f in project.get("files", []) if f["path"] != path]
+        if len(files) == len(project.get("files", [])):
+            raise NotFound("File not found")
+        await self._save_files(ws_id, project, files)
+        await self.audit.record(ws_id, user_id, "project.file.delete", "project", project_id, {"path": path})
+        return await self.get(ws_id, project_id)
+
+    async def _save_files(self, ws_id: str, project: dict, files: list[dict]) -> None:
+        saved = await self.projects.col.update_one(
+            {"_id": project["_id"], "workspace_id": ws_id, "revision": project["revision"]},
+            {"$set": {"files": files, "updated_at": now()}, "$inc": {"revision": 1}})
+        if saved.modified_count != 1:
+            raise Conflict("Project changed while saving. Reload and retry.", code="REVISION_MISMATCH")
+
     async def list(self, ws_id: str, limit: int, offset: int) -> tuple[list[dict], int]:
         return await self.projects.list(ws_id, {"deleted": False}, sort=[("updated_at", -1)],
                                         limit=limit, offset=offset)
 
+    async def _require_published(self, ws_id: str, agent_ids) -> None:
+        for agent_id in {a for a in agent_ids if a}:
+            agent = await self.agents.get(ws_id, agent_id)
+            if not agent or agent.get("deleted"):
+                raise Unprocessable(f"Agent '{agent_id}' was not found in this workspace", code="PROJECT_AGENT_INVALID")
+            if agent.get("status") != "published" or not agent.get("published_version"):
+                raise Unprocessable(f"Agent '{agent['name']}' must be published before project assignment",
+                                    code="PROJECT_AGENT_NOT_PUBLISHED")
+
     async def create(self, ws_id: str, user_id: str, req: ProjectCreate) -> dict:
-        all_agent_ids = set(req.planning_agent_ids + req.supervisor_agent_ids +
-                            [agent_id for team in req.teams for agent_id in team.agent_ids])
+        all_agent_ids = set(req.planning_agent_ids + req.supervisor_agent_ids + req.reviewer_agent_ids +
+                            [agent_id for team in req.teams for agent_id in team.agent_ids] +
+                            [team.lead_agent_id for team in req.teams if team.lead_agent_id] +
+                            ([req.director_agent_id] if req.director_agent_id else []))
         for agent_id in all_agent_ids:
             agent = await self.agents.get(ws_id, agent_id)
             if not agent:
@@ -123,7 +278,8 @@ class ProjectService:
                "idea": req.idea, "description": req.description, "status": "planning",
                "planning_agent_ids": req.planning_agent_ids, "supervisor_agent_ids": req.supervisor_agent_ids,
                "teams": [team.model_dump(mode="json") for team in req.teams], "documents": [], "planning_runs": [],
-               "planning_model": planning_model,
+               "planning_model": planning_model, "director_agent_id": req.director_agent_id,
+               "reviewer_agent_ids": req.reviewer_agent_ids, "files": [], "build_runs": [], "build_workflow_id": None,
                "revision": 1, "created_by": user_id, "created_at": t, "updated_at": t, "deleted": False}
         try:
             await self.projects.insert(doc)
@@ -147,16 +303,18 @@ class ProjectService:
                             raise Unprocessable(f"Agent '{agent_id}' must be published in this workspace",
                                                 code="PROJECT_AGENT_INVALID")
                 if field == "teams":
-                    for team in value:
-                        for agent_id in team.agent_ids:
-                            agent = await self.agents.get(ws_id, agent_id)
-                            if not agent or agent.get("status") != "published" or not agent.get("published_version"):
-                                raise Unprocessable(f"Agent '{agent_id}' must be published in this workspace",
-                                                    code="PROJECT_AGENT_INVALID")
+                    await self._require_published(ws_id, [a for team in value for a in
+                                                          [*team.agent_ids, team.lead_agent_id]])
                     value = [team.model_dump(mode="json") for team in value]
                 if field == "name":
                     fields["name_lower"] = value.lower()
                 fields[field] = value
+        if req.director_agent_id is not None:
+            await self._require_published(ws_id, [req.director_agent_id])
+            fields["director_agent_id"] = req.director_agent_id or None
+        if req.reviewer_agent_ids is not None:
+            await self._require_published(ws_id, req.reviewer_agent_ids)
+            fields["reviewer_agent_ids"] = list(dict.fromkeys(req.reviewer_agent_ids))
         if req.clear_planning_model:
             fields["planning_model"] = None
         elif req.planning_model is not None:
