@@ -8,6 +8,7 @@ import { useState } from "react"
 import { toast } from "sonner"
 
 import { ErrorState, LoadingRows, PageHeader } from "@/components/common/states"
+import { type PlanningModel, PlanningModelPicker } from "@/components/projects/planning-model-picker"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -15,6 +16,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { projectTeamDefinition } from "@/components/workflows/canvas/graph"
+import { useProviders } from "@/hooks/use-api"
 import { useWorkflowMutations } from "@/hooks/use-modules"
 import { api } from "@/lib/api-client"
 import { projectSchema, type ProjectDocument } from "@/lib/schemas/projects"
@@ -33,6 +35,8 @@ export default function ProjectDetailPage() {
   const [content, setContent] = useState<string | null>(null)
   const [feedback, setFeedback] = useState<string | null>(null)
   const [error, setError] = useState("")
+  const [planChoice, setPlanChoice] = useState<PlanningModel | null>(null)
+  const providers = useProviders(workspaceId).data ?? []
   const project = useQuery({
     queryKey: ["project", workspaceId, projectId],
     queryFn: () => api.get(`/projects/${projectId}`, projectSchema),
@@ -47,9 +51,15 @@ export default function ProjectDetailPage() {
   async function invalidate() {
     await Promise.all([qc.invalidateQueries({ queryKey: ["project", workspaceId, projectId] }), qc.invalidateQueries({ queryKey: ["projects", workspaceId] })])
   }
+  const savedModel = data?.planning_model
+  const planningModel: PlanningModel = planChoice ?? (savedModel ? { provider_id: savedModel.provider_id, model: savedModel.model } : { provider_id: "", model: "" })
   const startPlan = useMutation({
-    mutationFn: () => api.post(`/projects/${projectId}/plan`, null, { feedback }),
-    onSuccess: async () => { toast.success("Planning agents queued"); setError(""); await invalidate() },
+    // Sends the feedback shown in the box (it starts from the selected document's saved feedback).
+    mutationFn: () => api.post(`/projects/${projectId}/plan`, null, {
+      feedback: editorFeedback ?? "",
+      ...(planChoice?.provider_id ? { planning_model: { provider_id: planChoice.provider_id, model: planChoice.model.trim() } } : {}),
+    }),
+    onSuccess: async () => { toast.success("Planning agents queued"); setError(""); setPlanChoice(null); await invalidate() },
     onError: (e) => setError(e instanceof Error ? e.message : "Could not start planning"),
   })
   const workflows = useWorkflowMutations(workspaceId)
@@ -105,7 +115,13 @@ export default function ProjectDetailPage() {
           </Card>
           <Card>
             <CardHeader><CardTitle>Planning feedback</CardTitle><CardDescription>Tell the planning agents what to change. Their next run receives this feedback and the selected existing documents.</CardDescription></CardHeader>
-            <CardContent className="space-y-3"><Textarea rows={4} value={editorFeedback} onChange={(e) => setFeedback(e.target.value)} maxLength={20000} placeholder="For example: split the backend into services, add role-based access, change the database model, or simplify the UI…" /><Button onClick={() => startPlan.mutate()} disabled={startPlan.isPending}><Play className="size-4" /> {startPlan.isPending ? "Queueing planners…" : data.documents.length ? "Revise plan with feedback" : "Generate project plan"}</Button></CardContent>
+            <CardContent className="space-y-3"><Textarea rows={4} value={editorFeedback} onChange={(e) => setFeedback(e.target.value)} maxLength={20000} placeholder="For example: split the backend into services, add role-based access, change the database model, or simplify the UI…" /><div className="rounded-lg border p-3"><p className="mb-2 text-sm font-medium">Planning model</p><PlanningModelPicker idPrefix="replan" providers={providers} value={planningModel} onChange={(v) => {
+              setPlanChoice(v)
+              if (!v.provider_id && savedModel) {
+                // Back to each agent's own model: clear the project's saved choice.
+                api.patch(`/projects/${projectId}`, projectSchema, { revision: data.revision, clear_planning_model: true }).then(invalidate).catch((e) => setError(e instanceof Error ? e.message : "Could not update the planning model"))
+              }
+            }} /></div><Button onClick={() => startPlan.mutate()} disabled={startPlan.isPending || (!!planningModel.provider_id && !planningModel.model.trim())}><Play className="size-4" /> {startPlan.isPending ? "Queueing planners…" : data.documents.length ? "Revise plan with feedback" : "Generate project plan"}</Button></CardContent>
           </Card>
           <Card>
             <CardHeader><div className="flex flex-wrap items-center justify-between gap-2"><div><CardTitle>Project documents</CardTitle><CardDescription>Edit generated plans, add your feedback, and approve reviewed documents.</CardDescription></div><Button variant="outline" onClick={() => { setSelectedId("__new__"); setTitle(null); setContent(null); setFeedback(null) }}><FileText className="size-4" /> New document</Button></div></CardHeader>
@@ -128,7 +144,7 @@ export default function ProjectDetailPage() {
         </div>
         <aside className="space-y-5">
           <Card><CardHeader><CardTitle>Planning activity</CardTitle><CardDescription>Agent runs are queued independently and execute in the background.</CardDescription></CardHeader><CardContent className="space-y-3">
-            {data.planning_runs.length === 0 ? <p className="text-sm text-muted-foreground">No planning runs yet.</p> : data.planning_runs.slice().reverse().map((run) => <div key={run.run_id} className="rounded-lg border p-3"><div className="flex items-start justify-between gap-2"><p className="text-sm font-medium">{run.agent_name}</p><span className="rounded-full border px-2 py-0.5 text-[11px]">{runStatusLabel[run.status] ?? run.status}</span></div><p className="mt-1 text-xs text-muted-foreground">{run.purpose}</p>{run.error != null && <p className="mt-2 text-xs text-destructive">{String(typeof run.error === "object" ? JSON.stringify(run.error) : run.error)}</p>}{run.document_id && <p className="mt-2 text-xs text-emerald-600">Document created</p>}</div>)}
+            {data.planning_runs.length === 0 ? <p className="text-sm text-muted-foreground">No planning runs yet.</p> : data.planning_runs.slice().reverse().map((run) => <div key={run.run_id} className="rounded-lg border p-3"><div className="flex items-start justify-between gap-2"><p className="text-sm font-medium">{run.agent_name}</p><span className="rounded-full border px-2 py-0.5 text-[11px]">{runStatusLabel[run.status] ?? run.status}</span></div><p className="mt-1 text-xs text-muted-foreground">{run.purpose}{run.model ? ` · ${run.model}` : ""}</p>{run.error != null && <p className="mt-2 text-xs text-destructive">{typeof run.error === "object" && run.error && "message" in run.error ? String((run.error as { message: unknown }).message) : String(typeof run.error === "object" ? JSON.stringify(run.error) : run.error)}</p>}{run.document_id && <p className="mt-2 text-xs text-emerald-600">Document created</p>}</div>)}
           </CardContent></Card>
           <Card><CardHeader><CardTitle>Team configuration</CardTitle><CardDescription>Set up any number of agents after the plan is approved.</CardDescription></CardHeader><CardContent className="space-y-3">{data.teams.length === 0 ? <p className="text-sm text-muted-foreground">No specialist teams configured yet.</p> : data.teams.map((team) => <div key={team.id} className="rounded-lg border p-3"><p className="font-medium">{team.name}</p><p className="mt-1 text-xs text-muted-foreground">{team.responsibility}</p><p className="mt-2 text-xs">{team.agent_ids.length} agents · up to {team.parallelism} parallel tasks</p></div>)}<p className="text-xs text-muted-foreground">Turn this team into a runnable workflow: your supervisor agents lead, each team gets a lead, and the leads delegate tasks to the team&apos;s agents in parallel. You can rearrange it on the canvas before publishing.</p><Button variant="outline" onClick={() => buildTeam.mutate()} disabled={buildTeam.isPending}><Network className="size-4" /> {buildTeam.isPending ? "Building…" : "Build team workflow"}</Button></CardContent></Card>
         </aside>

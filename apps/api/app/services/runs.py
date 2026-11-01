@@ -65,7 +65,11 @@ class RunService:
         self.budget = BudgetService(db)
 
     async def create(self, ws_id: str, user_id: str, role: str, req: RunCreate,
-                     idempotency_key: str | None, extra: dict | None = None) -> tuple[dict, bool]:
+                     idempotency_key: str | None, extra: dict | None = None,
+                     model_override: dict | None = None) -> tuple[dict, bool]:
+        """Queues an agent run. ``model_override`` ({provider_id, model}) runs the agent's prompt, tools
+        and knowledge on that model only, without its own model and fallbacks (Project Creator uses it
+        so the provider picked for planning is the one that answers)."""
         agent = await self.agents.get(ws_id, req.agent_id)
         if not agent:
             raise NotFound("Agent not found")
@@ -84,6 +88,15 @@ class RunService:
             if not v:
                 raise Conflict("Published version is missing", code="VERSION_MISSING")
             config, version = v["config"], v["version"]
+        if model_override:
+            provider = await self.providers.get(ws_id, model_override["provider_id"])
+            if not provider:
+                raise Unprocessable("The selected model provider does not exist in this workspace",
+                                    code="PROVIDER_NOT_FOUND")
+            if not provider.get("enabled", True):
+                raise Unprocessable(f"The provider '{provider['name']}' is disabled", code="PROVIDER_DISABLED")
+            config = {**config, "model": {"provider_id": provider["_id"], "model": model_override["model"]},
+                      "fallbacks": []}
         if not config.get("model"):
             raise Unprocessable("Agent has no model configured", code="MODEL_REQUIRED")
         msg = req.input.get("message")

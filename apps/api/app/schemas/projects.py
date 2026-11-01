@@ -4,6 +4,7 @@ from typing import Any, Literal
 
 from pydantic import Field, model_validator
 
+from app.schemas.agents import ModelRef
 from app.schemas.common import ApiModel, OutModel
 
 ProjectStatus = Literal["planning", "ready", "in_progress", "blocked", "completed", "archived"]
@@ -25,6 +26,8 @@ class ProjectCreate(ApiModel):
     planning_agent_ids: list[str] = Field(min_length=1, max_length=2)
     supervisor_agent_ids: list[str] = Field(default_factory=list, max_length=3)
     teams: list[SpecialistTeam] = Field(default_factory=list, max_length=30)
+    # Provider and model the planning agents run on. None keeps each agent's own published model.
+    planning_model: ModelRef | None = None
 
     @model_validator(mode="after")
     def unique_assignments(self):
@@ -47,6 +50,8 @@ class ProjectUpdate(ApiModel):
     planning_agent_ids: list[str] | None = Field(default=None, min_length=1, max_length=2)
     supervisor_agent_ids: list[str] | None = Field(default=None, max_length=3)
     teams: list[SpecialistTeam] | None = Field(default=None, max_length=30)
+    planning_model: ModelRef | None = None
+    clear_planning_model: bool = False  # True switches back to each agent's own model
 
 
 class ProjectDocumentCreate(ApiModel):
@@ -89,6 +94,7 @@ class ProjectOut(OutModel):
     teams: list[dict[str, Any]]
     documents: list[ProjectDocumentOut]
     planning_runs: list[dict[str, Any]]
+    planning_model: dict[str, Any] | None = None
     revision: int
     created_by: str
     created_at: datetime
@@ -98,6 +104,8 @@ class ProjectOut(OutModel):
 class ProjectPlanStart(ApiModel):
     feedback: str = Field(default="", max_length=20000)
     document_ids: list[str] = Field(default_factory=list, max_length=30)
+    # Overrides the project's planning model for this run and becomes the new project default.
+    planning_model: ModelRef | None = None
 
 
 class ProjectPlanStartOut(OutModel):

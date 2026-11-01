@@ -69,5 +69,5 @@ async def start_planning(project_id: str, body: ProjectPlanStart, ctx: Ctx = Dep
                          db: AsyncDatabase = Depends(db_dep)):
     svc = ProjectService(db)
     result = await svc.start_planning(ctx.workspace_id, ctx.user_id, ctx.role, project_id,
-                                      body.feedback, body.document_ids)
+                                      body.feedback, body.document_ids, body.planning_model)
     return result

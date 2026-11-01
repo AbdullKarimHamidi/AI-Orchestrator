@@ -1,27 +1,28 @@
 "use client"
 
 import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, Bot, Plus, Trash2 } from "lucide-react"
+import { ArrowLeft, Bot, Cpu, Plus, Trash2 } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
 import { toast } from "sonner"
 
 import { PageHeader } from "@/components/common/states"
+import { type PlanningModel, PlanningModelPicker, usableProviders } from "@/components/projects/planning-model-picker"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { useAgents } from "@/hooks/use-api"
+import { useAgents, useProviders } from "@/hooks/use-api"
 import { api } from "@/lib/api-client"
 import { projectSchema } from "@/lib/schemas/projects"
 import { useWorkspaceCtx } from "@/lib/workspace-context"
 import { cn } from "cn"
 
 type TeamDraft = { id: string; name: string; responsibility: string; agent_ids: string[]; parallelism: number }
-const published = (agents: { id: string; name: string; status: string; published_version: number | null }[]) => agents.filter((a) => a.status === "published" && a.published_version)
+const published = <T extends { status: string; published_version: number | null }>(agents: T[]) => agents.filter((a) => a.status === "published" && a.published_version)
 
 export default function NewProjectPage() {
   const router = useRouter()
@@ -36,9 +37,19 @@ export default function NewProjectPage() {
   const [supervisors, setSupervisors] = useState<string[]>([])
   const [teams, setTeams] = useState<TeamDraft[]>([])
   const [error, setError] = useState("")
+  const providersQuery = useProviders(workspaceId)
+  const providers = providersQuery.data ?? []
+  const [chosenModel, setChosenModel] = useState<PlanningModel | null>(null)
+  // Until the user picks a model, follow the first planner's current model, so an agent switched to
+  // e.g. OpenRouter plans on OpenRouter even before it is republished.
+  const firstRef = agents.find((a) => a.id === planners[0])?.draft.model
+  const followsAgent = firstRef && usableProviders(providers).some((p) => p.id === firstRef.provider_id)
+  const planningModel: PlanningModel = chosenModel ?? (followsAgent ? { provider_id: firstRef.provider_id, model: firstRef.model } : { provider_id: "", model: "" })
+  const providerName = (id: string | undefined) => providers.find((p) => p.id === id)?.name
   const create = useMutation({
     mutationFn: () => api.post("/projects", projectSchema, { name: name.trim(), idea: idea.trim(), description: description.trim(),
       planning_agent_ids: planners, supervisor_agent_ids: supervisors,
+      planning_model: planningModel.provider_id ? { provider_id: planningModel.provider_id, model: planningModel.model.trim() } : null,
       teams: teams.map((t) => ({ ...t, agent_ids: t.agent_ids, parallelism: Math.max(1, Math.min(100, t.parallelism)) })) }),
     onSuccess: async (project) => { await qc.invalidateQueries({ queryKey: ["projects", workspaceId] }); toast.success("Project created"); router.push(`/projects/${project.id}`) },
     onError: (e) => setError(e instanceof Error ? e.message : "Could not create project"),
@@ -70,11 +81,17 @@ export default function NewProjectPage() {
               {agentsQuery.isPending ? <p className="text-sm text-muted-foreground">Loading agents…</p> : agents.length === 0 ? <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">No published agents found. Create an agent, configure a provider, and publish it before planning.</p> : agents.map((agent) => (
                 <label key={agent.id} className={cn("flex cursor-pointer items-center gap-3 rounded-lg border p-3 transition-colors", planners.includes(agent.id) ? "border-primary/50 bg-primary/5" : "hover:bg-accent/40")}>
                   <input type="checkbox" checked={planners.includes(agent.id)} onChange={() => toggle(planners, setPlanners, agent.id, 2)} disabled={!planners.includes(agent.id) && planners.length >= 2} className="size-4 accent-primary" />
-                  <span className="min-w-0 flex-1"><span className="block text-sm font-medium">{agent.name}</span><span className="text-xs text-muted-foreground">Published v{agent.published_version}</span></span>
+                  <span className="min-w-0 flex-1"><span className="block text-sm font-medium">{agent.name}</span><span className="text-xs text-muted-foreground">Published v{agent.published_version}{agent.draft.model ? ` · ${providerName(agent.draft.model.provider_id) ?? "provider"} / ${agent.draft.model.model}` : ""}</span>{agent.draft_dirty && <span className="block text-xs text-amber-600">Has unpublished changes: pick its model below to use them.</span>}</span>
                   {planners.includes(agent.id) && <span className="text-xs font-medium text-primary">Selected</span>}
                 </label>
               ))}
               <p className="text-xs text-muted-foreground">{planners.length}/2 selected</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader><CardTitle className="flex items-center gap-2"><Cpu className="size-5" /> Planning model</CardTitle><CardDescription>Choose which AI provider and model writes the plan, for example OpenRouter.</CardDescription></CardHeader>
+            <CardContent>
+              <PlanningModelPicker providers={providers} value={planningModel} onChange={setChosenModel} />
             </CardContent>
           </Card>
           <Card>
@@ -104,7 +121,7 @@ export default function NewProjectPage() {
               <div className="flex items-start gap-3"><span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold">1</span><p><strong>Save the brief</strong><span className="mt-1 block text-muted-foreground">Your idea and team configuration are stored in MongoDB.</span></p></div>
               <div className="flex items-start gap-3"><span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold">2</span><p><strong>Generate plans</strong><span className="mt-1 block text-muted-foreground">Selected planners run through the existing background queue.</span></p></div>
               <div className="flex items-start gap-3"><span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold">3</span><p><strong>Review before execution</strong><span className="mt-1 block text-muted-foreground">Edit the documents and add feedback before approving the plan.</span></p></div>
-              <Button className="w-full" type="submit" disabled={create.isPending || !name.trim() || idea.trim().length < 10 || planners.length < 1}>{create.isPending ? "Creating project…" : "Create project"}<ArrowLeft className="size-4 rotate-180" /></Button>
+              <Button className="w-full" type="submit" disabled={create.isPending || !name.trim() || idea.trim().length < 10 || planners.length < 1 || (!!planningModel.provider_id && !planningModel.model.trim())}>{create.isPending ? "Creating project…" : "Create project"}<ArrowLeft className="size-4 rotate-180" /></Button>
               <p className="text-xs text-muted-foreground">Only published agents in this workspace can be assigned.</p>
             </CardContent>
           </Card>

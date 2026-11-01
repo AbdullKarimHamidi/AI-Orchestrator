@@ -17,6 +17,7 @@ from app.repositories.agents import AgentRepository
 from app.repositories.audit import AuditRepository
 from app.repositories.base import now
 from app.repositories.projects import ProjectRepository
+from app.repositories.providers import ProviderRepository
 from app.repositories.runs import RunRepository
 from app.schemas.projects import ProjectCreate, ProjectDocumentCreate, ProjectDocumentUpdate, ProjectUpdate
 from app.schemas.runs import RunCreate
@@ -29,10 +30,27 @@ class ProjectService:
         self.projects = ProjectRepository(db)
         self.agents = AgentRepository(db)
         self.runs = RunRepository(db)
+        self.providers = ProviderRepository(db)
         self.audit = AuditRepository(db)
 
     def present(self, project: dict) -> dict:
         return {**project, "id": project["_id"]}
+
+    async def _planning_model(self, ws_id: str, ref) -> dict | None:
+        """Validates the provider/model chosen for planning and returns it as stored on the project."""
+        if ref is None:
+            return None
+        provider = await self.providers.get(ws_id, ref.provider_id)
+        if not provider:
+            raise Unprocessable("The selected model provider does not exist in this workspace",
+                                code="PROVIDER_NOT_FOUND")
+        if not provider.get("enabled", True):
+            raise Unprocessable(f"The provider '{provider['name']}' is disabled. Enable it on the Models page.",
+                                code="PROVIDER_DISABLED")
+        model = ref.model.strip()
+        if provider.get("allowed_models") and model not in provider["allowed_models"]:
+            raise Unprocessable(f"Model '{model}' is not allowed on {provider['name']}", code="MODEL_NOT_ALLOWED")
+        return {"provider_id": provider["_id"], "model": model, "provider_name": provider["name"]}
 
     async def get(self, ws_id: str, project_id: str) -> dict:
         project = await self.projects.get(ws_id, project_id)
@@ -99,11 +117,13 @@ class ProjectService:
             if agent.get("status") != "published" or not agent.get("published_version"):
                 raise Unprocessable(f"Agent '{agent['name']}' must be published before project assignment",
                                     code="PROJECT_AGENT_NOT_PUBLISHED")
+        planning_model = await self._planning_model(ws_id, req.planning_model)
         t = now()
         doc = {"_id": new_id("prj"), "workspace_id": ws_id, "name": req.name, "name_lower": req.name.lower(),
                "idea": req.idea, "description": req.description, "status": "planning",
                "planning_agent_ids": req.planning_agent_ids, "supervisor_agent_ids": req.supervisor_agent_ids,
                "teams": [team.model_dump(mode="json") for team in req.teams], "documents": [], "planning_runs": [],
+               "planning_model": planning_model,
                "revision": 1, "created_by": user_id, "created_at": t, "updated_at": t, "deleted": False}
         try:
             await self.projects.insert(doc)
@@ -137,6 +157,10 @@ class ProjectService:
                 if field == "name":
                     fields["name_lower"] = value.lower()
                 fields[field] = value
+        if req.clear_planning_model:
+            fields["planning_model"] = None
+        elif req.planning_model is not None:
+            fields["planning_model"] = await self._planning_model(ws_id, req.planning_model)
         updated = await self.projects.update_if_revision(ws_id, project_id, req.revision, fields)
         if not updated:
             raise Conflict("Project changed since you opened it. Reload and retry.",
@@ -200,8 +224,14 @@ class ProjectService:
         return await self.get(ws_id, project_id)
 
     async def start_planning(self, ws_id: str, user_id: str, role: str, project_id: str,
-                             feedback: str = "", document_ids: list[str] | None = None) -> dict:
+                             feedback: str = "", document_ids: list[str] | None = None,
+                             planning_model=None) -> dict:
         project = await self.get(ws_id, project_id)
+        model = await self._planning_model(ws_id, planning_model) if planning_model else project.get("planning_model")
+        if model:
+            # Re-check a stored choice: the provider may have been deleted or disabled since.
+            from app.schemas.agents import ModelRef
+            model = await self._planning_model(ws_id, ModelRef(provider_id=model["provider_id"], model=model["model"]))
         selected_docs = [d for d in project.get("documents", []) if not document_ids or d["id"] in document_ids]
         doc_context = "\n\n".join(f"## {d['title']}\n{d.get('content', '')}" for d in selected_docs)
         prompt = (
@@ -226,26 +256,33 @@ class ProjectService:
                                                        input={"message": prompt,
                                                               "variables": {"project_id": project_id,
                                                                             "purpose": "Project plan",
-                                                                            "feedback": feedback}}), None)
+                                                                            "feedback": feedback}}), None,
+                       model_override={"provider_id": model["provider_id"], "model": model["model"]} if model else None)
             for agent_id in agent_ids
         ], return_exceptions=True)
         queued = []
         errors = []
         for agent_id, result in zip(agent_ids, results, strict=False):
             if isinstance(result, Exception):
-                errors.append({"agent_id": agent_id, "error": str(result)})
+                errors.append({"agent_id": agent_id, "error": getattr(result, "message", None) or str(result)})
                 continue
             run, _ = result
             agent = await self.agents.get(ws_id, agent_id)
             queued.append({"run_id": run["_id"], "agent_id": agent_id, "agent_name": agent["name"],
                            "purpose": "Project plan", "status": run["status"], "document_id": None,
+                           "model": run["config"]["model"]["model"],
+                           "provider_id": run["config"]["model"]["provider_id"],
                            "error": None, "created_at": now(), "updated_at": now()})
         if not queued:
-            raise Unprocessable("No planning runs could be queued", code="PLANNING_START_FAILED",
+            reasons = "; ".join(e["error"] for e in errors)
+            raise Unprocessable(f"No planning runs could be queued: {reasons}", code="PLANNING_START_FAILED",
                                 details={"errors": errors})
+        updates: dict[str, Any] = {"status": "planning", "updated_at": now()}
+        if planning_model:
+            updates["planning_model"] = model
         await self.projects.col.update_one({"_id": project_id, "workspace_id": ws_id},
                                            {"$push": {"planning_runs": {"$each": queued}},
-                                            "$set": {"status": "planning", "updated_at": now()}})
+                                            "$set": updates, "$inc": {"revision": 1}})
         await self.audit.record(ws_id, user_id, "project.planning.start", "project", project_id,
                                 {"run_ids": [r["run_id"] for r in queued], "errors": errors})
         return {"project_id": project_id, "run_ids": [r["run_id"] for r in queued],

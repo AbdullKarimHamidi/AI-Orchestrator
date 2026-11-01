@@ -27,6 +27,7 @@ export const projectPlanningRunSchema = z.object({
   status: z.enum(["queued", "running", "waiting_for_approval", "completed", "failed", "cancelled", "timed_out"]),
   document_id: z.string().nullable(),
   error: z.unknown().nullable(),
+  model: z.string().optional(),
   created_at: z.string(),
   updated_at: z.string(),
 })
@@ -42,6 +43,7 @@ export const projectSchema = z.object({
   teams: z.array(projectTeamSchema),
   documents: z.array(projectDocumentSchema),
   planning_runs: z.array(projectPlanningRunSchema),
+  planning_model: z.object({ provider_id: z.string(), model: z.string(), provider_name: z.string().optional() }).nullable().optional(),
   revision: z.number(),
   created_by: z.string(),
   created_at: z.string(),

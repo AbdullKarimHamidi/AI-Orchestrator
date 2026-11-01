@@ -226,7 +226,9 @@ class AgentExecutor:
                 result = await self._call(run, p, ref["model"], label, req, totals, per_run_cap,
                                           will_fallback=idx < len(chain) - 1)
             except ProviderError as err:
-                last_error = RunFailure(f"PROVIDER_{err.kind.upper()}", redact_text(err.message))
+                # Name the provider and model: with fallbacks, the last error may come from any of them.
+                last_error = RunFailure(f"PROVIDER_{err.kind.upper()}",
+                                        redact_text(f"{p['name']} ({ref['model']}): {err.message}"))
                 continue
             chosen = (p, ref["model"], label)
             break
